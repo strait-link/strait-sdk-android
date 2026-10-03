@@ -1,4 +1,4 @@
-# strait-sdk-android (Kotlin) · v0.4.0
+# strait-sdk-android (Kotlin) · v0.5.0
 
 Deep linking for native Android, part of [Strait](../). It covers direct links
 (verified App Links and custom-scheme hand-offs), deferred links (Play Install
@@ -50,7 +50,7 @@ dependencyResolutionManagement {
 }
 
 // app/build.gradle.kts
-dependencies { implementation("com.github.bazingga08:strait-sdk-android:v0.4.0") }
+dependencies { implementation("com.github.bazingga08:strait-sdk-android:v0.5.0") }
 ```
 <!-- /brand:install -->
 
