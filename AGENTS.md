@@ -14,7 +14,7 @@ Served by JitPack from this public repo.
 maven("https://jitpack.io")
 
 // app/build.gradle.kts
-implementation("com.github.strait-link:strait-sdk-android:v0.8.2")
+implementation("com.github.strait-link:strait-sdk-android:v0.8.3")
 implementation("com.android.installreferrer:installreferrer:2.2")
 implementation("androidx.lifecycle:lifecycle-process:2.8.7")
 ```
