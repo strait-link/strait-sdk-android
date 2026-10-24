@@ -19,15 +19,25 @@ class DoctorLiveTest {
     )
     private val cert = "FA:C6:17:45:DC:09:03:78:6F:B9:ED:E6:2A:96:2B:39:9F:73:48:F0:BB:6F:89:9B:83:32:66:75:91:03:3B:9C"
 
-    private fun show(label: String, r: DoctorReport): List<String> {
-        println("== $label: ok=${r.ok}")
-        r.findings.forEach { println("  [${it.severity}] ${it.id}: ${it.title}" + if (it.fix.isEmpty()) "" else "\n      fix: ${it.fix}") }
+    /** doctor() prints its own `[Strait doctor]` lines; this adds the call and the result. */
+    private fun show(label: String, run: () -> DoctorReport): List<String> {
+        println("== $label")
+        val r = run()
+        println("   -> ok=${r.ok}")
         return r.findings.map { it.id }
     }
 
+    private val otherCert = "B1:8F:00:11:22:33:44:55:66:77:88:99:AA:BB:CC:DD:EE:FF:00:11:22:33:44:55:66:77:88:99:AA:BB:17:AE"
+
     @Test fun listedApp() =
-        assertEquals(listOf("key.ok", "app.listed", "cert.listed"), show("doctor(\"com.straitlink.app\", [$cert])", client.doctor("com.straitlink.app", listOf(cert))))
+        assertEquals(listOf("key.ok", "app.listed", "cert.listed"), show("doctor(\"com.straitlink.app\", [$cert])") { client.doctor("com.straitlink.app", listOf(cert)) })
 
     @Test fun unlistedApp() =
-        assertEquals(listOf("key.ok", "app.missing"), show("doctor(\"com.example.notlisted\", [$cert])", client.doctor("com.example.notlisted", listOf(cert))))
+        assertEquals(listOf("key.ok", "app.missing"), show("doctor(\"com.example.notlisted\", [$cert])") { client.doctor("com.example.notlisted", listOf(cert)) })
+
+    @Test fun unlistedCertificate() =
+        assertEquals(listOf("key.ok", "app.listed", "cert.missing"), show("doctor(\"com.straitlink.app\", [$otherCert])") { client.doctor("com.straitlink.app", listOf(otherCert)) })
+
+    @Test fun unknownPackage() =
+        assertEquals(listOf("key.ok", "app.unknown"), show("doctor(\"  \")") { client.doctor("  ") })
 }

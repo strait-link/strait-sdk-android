@@ -89,6 +89,7 @@ fun doctorFindings(
         return out
     }
     val listed = apps.keys.joinToString(", ")
+    val appId = appId?.trim()
     if (appId.isNullOrEmpty()) {
         out.add(DoctorFinding("app.unknown", "warn", "$host lists $listed", "Make sure your app is one of these."))
         return out
@@ -99,14 +100,14 @@ fun doctorFindings(
         return out
     }
     ok("app.listed", "$host lists $match")
-    if (!ios && certSha256.isNotEmpty()) {
-        val mine = certSha256.map(::normalizeFingerprint)
+    val mine = if (ios) emptyList() else certSha256.map(::normalizeFingerprint).filter { it.isNotEmpty() }
+    if (mine.isNotEmpty()) {
         if (mine.any { it in apps.getValue(match) }) {
             ok("cert.listed", "This build's signing certificate is listed")
         } else {
             err(
                 "cert.missing", "This build's signing certificate isn't listed for $appId",
-                "Add ${mine.first()} in Dashboard → Apps & stores. Debug, release and Play App Signing keys each have their own fingerprint.",
+                "Add ${mine.joinToString(", ")} in Dashboard → Apps & stores. Debug, release and Play App Signing keys each have their own fingerprint.",
             )
         }
     }
@@ -128,15 +129,16 @@ private fun androidApps(body: String): Map<String, Set<String>>? {
     return apps
 }
 
-/** apple-app-site-association: appIDs (TEAM.bundle) in file order; null without `applinks.details`. */
+/** apple-app-site-association: appIDs (TEAM.bundle) in file order (`appIDs`, then the legacy `appID`), once each; null without `applinks.details`. */
 private fun iosApps(body: String): Map<String, Set<String>>? {
     val details = try { JSONObject(body).optJSONObject("applinks")?.optJSONArray("details") } catch (_: Exception) { null } ?: return null
     val apps = LinkedHashMap<String, Set<String>>()
     for (i in 0 until details.length()) {
         val d = details.optJSONObject(i) ?: continue
-        d.optString("appID", "").takeIf { it.isNotEmpty() }?.let { apps[it] = emptySet() }
-        val ids = d.optJSONArray("appIDs") ?: continue
-        for (j in 0 until ids.length()) ids.optString(j, "").takeIf { it.isNotEmpty() }?.let { apps[it] = emptySet() }
+        d.optJSONArray("appIDs")?.let { ids ->
+            for (j in 0 until ids.length()) ids.optString(j, "").takeIf { it.isNotEmpty() }?.let { apps.putIfAbsent(it, emptySet()) }
+        }
+        d.optString("appID", "").takeIf { it.isNotEmpty() }?.let { apps.putIfAbsent(it, emptySet()) }
     }
     return apps
 }

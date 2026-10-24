@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.8.4
+
+- `doctor()` now gives exactly the findings of the other Strait SDKs (React Native 0.9.3, Swift 0.9.4,
+  Flutter 0.9.4) for every case in the shared `doctor-vectors.json` (43 cases, every ADR 0002 row):
+  a blank package counts as unknown (`app.unknown`) and a padded one is trimmed; blank certificates are
+  ignored; `cert.missing` names every certificate passed, not only the first; an
+  apple-app-site-association's `appIDs` are listed before the legacy `appID`, once each.
+- `doctor()` prints each finding, `[Strait doctor] <severity> <id>: <title>. Fix: <fix>`, the same line
+  as the other SDKs (logcat tag System.out); 0.8.3 logged nothing. If you logged the findings yourself,
+  you can drop that loop.
+
 ## 0.8.3
 
 - `doctor()`: the `host.file_missing` title names the bare file, matching the other Strait SDKs:
