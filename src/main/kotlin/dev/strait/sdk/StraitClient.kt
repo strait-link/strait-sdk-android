@@ -245,6 +245,24 @@ class StraitClient(private val config: StraitConfig) {
         JSONObject()
     }
 
+    /**
+     * Setup check (contract B23): your key, your endpoint, and whether the link host's
+     * `/.well-known/assetlinks.json` lists [packageName] and this build's signing certificate
+     * ([certSha256], any case, with or without colons). One GET through the configured transport.
+     * Blocking: call it off the main thread, in debug builds only. Never throws; logs nothing
+     * (log the findings yourself, see README "Check your setup").
+     */
+    fun doctor(packageName: String? = null, certSha256: List<String> = emptyList()): DoctorReport {
+        val file = doctorHost(base)?.let {
+            try {
+                config.transport.request(base + doctorFilePath(config.platform), "GET", null).let { r -> DoctorFile(r.status, r.body) }
+            } catch (_: Exception) {
+                DoctorFile(null, null)
+            }
+        }
+        return DoctorReport.of(doctorFindings(config.publishableKey, config.endpoint, config.platform, packageName, certSha256, file))
+    }
+
     /** Engine's comparison of the app and browser fingerprints on this network (blocking). */
     fun compareFingerprint(): JSONObject = try {
         call("GET", "/v1/debug/fingerprint?publishableKey=${URLEncoder.encode(config.publishableKey, "UTF-8")}", null).second
