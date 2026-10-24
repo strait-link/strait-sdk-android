@@ -27,7 +27,7 @@ A tap opens the exact screen, and every link open and install is recorded in you
   <a href="#docs-and-support">Talk to the Strait team</a>
 </p>
 
-`strait-sdk-android` (Kotlin) · v0.8.1
+`strait-sdk-android` (Kotlin) · v0.8.2
 
 Deep linking for native Android, part of [Strait](https://straitlink.in). It covers direct links
 (verified App Links and custom-scheme hand-offs), deferred links (Play Install
@@ -84,7 +84,7 @@ dependencyResolutionManagement {
 }
 
 // app/build.gradle.kts
-dependencies { implementation("com.github.strait-link:strait-sdk-android:v0.8.1") }
+dependencies { implementation("com.github.strait-link:strait-sdk-android:v0.8.2") }
 ```
 <!-- /brand:install -->
 
@@ -111,6 +111,7 @@ dependencies { implementation("com.github.strait-link:strait-sdk-android:v0.8.1"
 | B17 `screenWidth` is the portrait (shorter-side) width: `portraitScreenWidth(w, h)` | ✓ | `Core.kt`, README `device`, vectors v5 |
 | B18 open reports and the retry queue carry no query or fragment (`reportUrl`: host + path, plus the first `utm_source`); an expired `strait.lastTap` is deleted (`staleTap`) | ✓ | `StraitClient`, `Core.kt`, vectors v6 |
 | B22 old Firebase `*.page.link` links: short link → `/v1/resolve` (engine matches the old host + code); long link `/?link=<url>` → the `link` value is the destination, read on the device, no lookup | ✓ | `Core.kt` (`pageLinkLongLink`, `classifyUrl`), vectors v8 |
+| B23 `doctor()` setup check: key, endpoint, the link host's `assetlinks.json` lists the package and this build's signing certificate (`doctorFindings`, ids and wording from shared-spec ADR 0002); one GET, never throws, logs nothing | ✓ | `Doctor.kt`, `StraitClient.doctor` |
 
 Vectors: `src/test/resources/test-vectors.json` (signature) and
 `conformance-vectors.json` v8 (pure helpers). Both are byte-identical copies from
@@ -276,6 +277,44 @@ status as an `HttpResponse`.
 
 **Publishable key:** Dashboard → Get started → Publishable key (`st_pub_live_…`).
 It's safe to include in your app. Never put your secret key (`st_live_…`) in an app.
+
+### Check your setup (doctor)
+
+Most "the link opens the browser, not my app" problems are setup: the package or this build's signing
+certificate isn't listed in Dashboard → Apps & stores, or a secret key is in the app. `doctor()` checks your
+key, your endpoint and your link host's `/.well-known/assetlinks.json` against this app (contract B23). It
+makes one GET, never throws and logs nothing, so log the findings yourself. Call it off the main thread, in
+debug builds only.
+
+```kotlin
+// in a debug build, on a background thread
+@Suppress("DEPRECATION")
+val signers: Array<android.content.pm.Signature> = if (Build.VERSION.SDK_INT >= 28) {
+    val info = packageManager.getPackageInfo(packageName, PackageManager.GET_SIGNING_CERTIFICATES)
+    info.signingInfo?.apkContentsSigners ?: emptyArray()
+} else {
+    packageManager.getPackageInfo(packageName, PackageManager.GET_SIGNATURES).signatures ?: emptyArray()
+}
+val sha256 = signers.map { s ->
+    MessageDigest.getInstance("SHA-256").digest(s.toByteArray()).joinToString(":") { "%02X".format(it) }
+}
+val report = strait.doctor(context.packageName, sha256)
+report.findings.forEach { Log.i("Strait", "[${it.severity}] ${it.id}: ${it.title} ${it.fix}") }
+```
+
+You should see (all set up):
+
+```
+[ok] key.ok: Publishable key is set
+[ok] app.listed: <handle>.strait.link lists com.yourcompany.app
+[ok] cert.listed: This build's signing certificate is listed
+```
+
+`report.ok` is false when any finding is an `error`; each one's `fix` says what to change, e.g.
+`[error] cert.missing: This build's signing certificate isn't listed for com.yourcompany.app` with
+`Add FA:C6:… in Dashboard → Apps & stores. Debug, release and Play App Signing keys each have their own
+fingerprint.` Intent filters stay with the free web checker and the docs: the SDK can't see them.
+`doctorFindings(...)` is the same check as a pure function over a file you fetched yourself.
 
 ### 5. Store sheet (new): install another app without leaving yours
 
