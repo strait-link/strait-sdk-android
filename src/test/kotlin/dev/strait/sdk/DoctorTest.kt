@@ -188,6 +188,24 @@ class DoctorTest {
         assertFalse(r.ok)
     }
 
+    @Test fun doctorPrintsEachFindingLikeTheOtherSdks() {
+        val out = java.io.ByteArrayOutputStream()
+        val saved = System.out
+        System.setOut(java.io.PrintStream(out, true, "UTF-8"))
+        try {
+            client(ep, { _, _, _ -> HttpResponse(200, file.body) }).doctor("com.example.notlisted")
+        } finally {
+            System.setOut(saved)
+        }
+        assertEquals(
+            listOf(
+                "[Strait doctor] ok key.ok: Publishable key is set",
+                "[Strait doctor] error app.missing: acme.strait.link doesn't list com.example.notlisted. Fix: Add com.example.notlisted in Dashboard → Apps & stores (listed now: com.acme.app, com.acme.beta).",
+            ),
+            out.toString("UTF-8").trim().lines(),
+        )
+    }
+
     @Test fun doctorInvalidEndpointFetchesNothing() {
         var called = false
         val r = client("http://acme.strait.link", { _, _, _ -> called = true; HttpResponse(200, "[]") }).doctor()

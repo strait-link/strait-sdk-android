@@ -249,8 +249,9 @@ class StraitClient(private val config: StraitConfig) {
      * Setup check (contract B23): your key, your endpoint, and whether the link host's
      * `/.well-known/assetlinks.json` lists [packageName] and this build's signing certificate
      * ([certSha256], any case, with or without colons). One GET through the configured transport.
-     * Blocking: call it off the main thread, in debug builds only. Never throws; logs nothing
-     * (log the findings yourself, see README "Check your setup").
+     * Blocking: call it off the main thread, in debug builds only. Never throws. Prints each finding
+     * as `[Strait doctor] <severity> <id>: <title>. Fix: <fix>`, the same line as the other Strait SDKs
+     * (logcat tag System.out).
      */
     fun doctor(packageName: String? = null, certSha256: List<String> = emptyList()): DoctorReport {
         val file = doctorHost(base)?.let {
@@ -260,7 +261,9 @@ class StraitClient(private val config: StraitConfig) {
                 DoctorFile(null, null)
             }
         }
-        return DoctorReport.of(doctorFindings(config.publishableKey, config.endpoint, config.platform, packageName, certSha256, file))
+        val report = DoctorReport.of(doctorFindings(config.publishableKey, config.endpoint, config.platform, packageName, certSha256, file))
+        report.findings.forEach { println("[Strait doctor] ${it.severity} ${it.id}: ${it.title}${if (it.fix.isEmpty()) "" else ". Fix: ${it.fix}"}") }
+        return report
     }
 
     /** Engine's comparison of the app and browser fingerprints on this network (blocking). */
