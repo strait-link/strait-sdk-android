@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.8.2
+
+- New `StraitClient.doctor(packageName, certSha256)`: a setup check for debug builds (contract B23,
+  shared-spec ADR 0002). It checks the key (publishable, not a secret key), the endpoint (an https link
+  domain), and whether the link host's `/.well-known/assetlinks.json` lists your package and this build's
+  signing certificate. One GET through the configured transport; blocking (call it off the main thread);
+  never throws; logs nothing. Returns `DoctorReport(ok, findings)` with `DoctorFinding(id, severity,
+  title, fix)`, the same ids and wording as every Strait SDK. The pure `doctorFindings(...)` (with
+  `DoctorFile`) is public for wrappers such as Capacitor. README: "Check your setup (doctor)".
+
 ## 0.8.1
 
 - `/v1/resolve`, `/v1/open` (queued retries too) and `/v1/store-sheet` now send `deviceClass`
