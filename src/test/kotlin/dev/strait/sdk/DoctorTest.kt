@@ -78,7 +78,7 @@ class DoctorTest {
             assertEquals(listOf("key.ok", "host.file_missing"), ids(fs), f.toString())
             assertEquals(
                 DoctorFinding(
-                    "host.file_missing", "error", "acme.strait.link doesn't serve /.well-known/assetlinks.json",
+                    "host.file_missing", "error", "acme.strait.link doesn't serve assetlinks.json",
                     "Use your Strait link domain as endpoint (Dashboard → Get started); Strait serves this file there.",
                 ),
                 fs[1],
@@ -163,7 +163,7 @@ class DoctorTest {
         assertEquals(DoctorFinding("app.listed", "ok", "acme.strait.link lists ABCDE12345.com.acme.app", ""), ok[1])
         val miss = run(platform = "ios", appId = "com.other", f = aasa)
         assertEquals("Add com.other in Dashboard → Apps & stores (listed now: ABCDE12345.com.acme.app, ABCDE12345.com.acme.beta).", miss[1].fix)
-        assertEquals("acme.strait.link doesn't serve /.well-known/apple-app-site-association", run(platform = "ios", f = file)[1].title)
+        assertEquals("acme.strait.link doesn't serve apple-app-site-association", run(platform = "ios", f = file)[1].title)
         assertEquals("No iOS app is set up for acme.strait.link", run(platform = "ios", f = DoctorFile(200, """{"applinks":{"details":[]}}"""))[1].title)
     }
 

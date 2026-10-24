@@ -79,7 +79,7 @@ fun doctorFindings(
     // listed app id (Android package / iOS appID) -> its fingerprints (Android only)
     val apps = (if (file.status == 200) file.body?.let { if (ios) iosApps(it) else androidApps(it) } else null) ?: run {
         err(
-            "host.file_missing", "$host doesn't serve ${doctorFilePath(platform)}",
+            "host.file_missing", "$host doesn't serve ${doctorFilePath(platform).substringAfterLast('/')}",
             "Use your Strait link domain as endpoint (Dashboard → Get started); Strait serves this file there.",
         )
         return out

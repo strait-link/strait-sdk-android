@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.8.3
+
+- `doctor()`: the `host.file_missing` title names the bare file, matching the other Strait SDKs:
+  "<host> doesn't serve assetlinks.json" (0.8.2 said "/.well-known/assetlinks.json"). No other change.
+
 ## 0.8.2
 
 - New `StraitClient.doctor(packageName, certSha256)`: a setup check for debug builds (contract B23,
