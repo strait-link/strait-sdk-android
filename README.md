@@ -376,6 +376,16 @@ real phone.
 `Core.kt` (`classifyUrl`, `pruneOpenQueue`, `parseStraitLink`, ...) are internal since 0.8.0; `StraitClient`
 does all of it for you.
 
+## Size and speed
+
+Measured 25 Oct 2026 on 0.8.4.
+
+| What | Size or time | How it was measured |
+|---|---|---|
+| Library | 95 KB jar. Its only dependency is `kotlin-stdlib`, which Kotlin apps already ship | `./gradlew jar` |
+| In your app after R8 | about 35 KB of dex (the SDK plus the parts of the Kotlin stdlib it uses). The whole sample APK is 45 KB | `examples/android`, release build with `isMinifyEnabled = true`, `apkanalyzer` |
+| Start-up on the main thread | 0.43 ms for `StraitClient(StraitConfig(...))` + 0.05 ms for `start()` (network work then runs on your executor) | the sample app on an Android 15 arm64 emulator, release build, median of 6 cold launches |
+
 ## Example app
 
 [`examples/android`](examples/android) is a one-screen app: it opens a deep link (`straitsample://…` or an
