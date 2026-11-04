@@ -113,7 +113,8 @@ class UrlConnectionTransport(
     }
 }
 
-class StraitConfig(
+/** Java callers (the Capacitor plugin) keep compiling as parameters are added at the end ([JvmOverloads]). */
+class StraitConfig @JvmOverloads constructor(
     /** Workspace publishable key (st_pub_live_...), Dashboard -> Get started. Never the secret key. */
     val publishableKey: String,
     /** Your Strait link host, e.g. https://go.yourbrand.com */
@@ -295,6 +296,7 @@ class StraitClient(private val config: StraitConfig) {
      * network or the server was the reason, the event is kept and sent later with
      * the open reports (contract B13a).
      */
+    @JvmOverloads
     fun trackEvent(
         name: String, value: Double? = null, currency: String? = null, linkId: String? = null, clickId: String? = null,
         eventId: String? = null,
