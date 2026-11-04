@@ -124,9 +124,8 @@
 
 **Renamed to Strait** (breaking, clean break; no aliases for the old names).
 
-- Kotlin package `dev.strait.sdk`; `StraitClient`,
-  `StraitConfig`, `object Strait` → `object Strait`,
-  `parseStraitLink`, `parseStraitClick`.
+- New names: Kotlin package `dev.strait.sdk`; `StraitClient`, `StraitConfig`,
+  `object Strait`, `parseStraitLink`, `parseStraitClick`.
 - Wire params: the Play referrer / hand-off params are now `strait_link` and
   `strait_click` only.
 - Storage keys: `strait.deferredChecked`, `strait.pendingOpens` (old values are ignored).
