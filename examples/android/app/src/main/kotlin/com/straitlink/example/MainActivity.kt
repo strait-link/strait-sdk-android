@@ -20,10 +20,15 @@ class MainActivity : Activity() {
         super.onCreate(savedInstanceState)
         log = TextView(this)
         val purchase = Button(this).apply { text = "Log a purchase event" }
+        // Debug builds only: re-run the deferred check. With test mode on in the dashboard
+        // (Get started), it gets your latest tap, like a first open after install.
+        val recheck = Button(this).apply { text = "Check deferred link (test mode)" }
         setContentView(LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(48, 96, 48, 48)
+            fitsSystemWindows = true // Android 15 draws edge to edge: keep the buttons out from under the bars
             addView(purchase)
+            if (BuildConfig.DEBUG) addView(recheck)
             addView(log)
         })
 
@@ -36,6 +41,8 @@ class MainActivity : Activity() {
         offLink = strait.onLink { e -> runOnUiThread { show("${e.kind} link (${e.route}, ${e.appState}): matched=${e.matched} path=${e.path}") } }
         // The launch link (or null), then the deferred check once per install.
         if (savedInstanceState == null) strait.start(intent?.dataString)
+
+        recheck.setOnClickListener { io.execute { strait.checkDeferred() } } // the result arrives in onLink above
 
         purchase.setOnClickListener {
             io.execute {
