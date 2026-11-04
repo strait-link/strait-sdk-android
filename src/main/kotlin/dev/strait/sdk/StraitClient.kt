@@ -315,7 +315,8 @@ class StraitClient(private val config: StraitConfig) {
         if (staleTap(stored, at)) dropStaleTap() // B18: delete, don't just ignore
         eventClickId(stored, at, clickId)?.let { event.put("clickId", it) }
         val status = sendReport(event)
-        if (shouldRetryReport(status)) enqueue(event) else flush() // the network works: send anything saved earlier
+        // The network works: send anything saved earlier, on the executor (never block the caller on the backlog).
+        if (shouldRetryReport(status)) enqueue(event) else config.executor.execute { flush() }
         status != null && status in 200..299
     } catch (_: Exception) {
         false

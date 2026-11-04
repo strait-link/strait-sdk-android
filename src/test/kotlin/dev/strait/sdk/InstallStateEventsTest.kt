@@ -196,4 +196,29 @@ class InstallStateEventsTest {
         c.trackEvent("purchase", eventId = "ord_10")
         assertEquals(tap, queue(s)[0].getString("clickId"))
     }
+
+    @Test
+    fun anAcceptedEventSendsTheSavedQueueOnTheExecutorNotOnTheCallersThread() {
+        // Review 5 Nov: trackEvent blocks its caller for one request; the backlog it triggers
+        // (up to 100 saved reports) must run on the SDK's executor, like report().
+        val e = Engine()
+        val s = store("strait.deferredChecked" to "1")
+        val later = ArrayDeque<Runnable>()
+        val c = StraitClient(StraitConfig(
+            publishableKey = pk, endpoint = "https://links.test", storage = s, platform = "android",
+            device = { DeviceFields(390, 3.0, "en", "Asia/Kolkata") }, transport = e, clock = { t },
+            executor = { later.addLast(it) },
+        ))
+        c.start(null)
+        while (later.isNotEmpty()) later.removeFirst().run()
+        e.routes["/v1/event"] = null
+        c.trackEvent("purchase", eventId = "ord_11") // offline: saved
+        e.routes["/v1/event"] = 202
+        assertTrue(c.trackEvent("purchase", eventId = "ord_12"))
+        assertEquals(listOf("ord_11", "ord_12"), e.of("/v1/event").map { it.body!!.getString("eventId") }.distinct())
+        assertEquals(1, e.of("/v1/event").count { it.body!!.getString("eventId") == "ord_11" }) // not re-sent yet
+        while (later.isNotEmpty()) later.removeFirst().run()
+        assertEquals(2, e.of("/v1/event").count { it.body!!.getString("eventId") == "ord_11" })
+        assertEquals(0, queue(s).size)
+    }
 }
