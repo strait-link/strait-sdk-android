@@ -26,6 +26,7 @@ class MainActivity : Activity() {
         setContentView(LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(48, 96, 48, 48)
+            fitsSystemWindows = true // Android 15 draws edge to edge: keep the buttons out from under the bars
             addView(purchase)
             if (BuildConfig.DEBUG) addView(recheck)
             addView(log)
