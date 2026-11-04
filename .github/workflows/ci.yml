@@ -18,5 +18,8 @@ jobs:
       - run: ./gradlew test publishToMavenLocal --no-daemon
       - name: Example app builds against this source (examples/android)
         run: ./gradlew -p examples/android assembleDebug --no-daemon
+      # R8 build only (no emulator here); scripts/r8-smoke.sh also runs it on a device (run it on the Mac).
+      - name: Example app release build with R8 (minified)
+        run: ./gradlew -p examples/android assembleRelease --no-daemon
       - run: node scripts/spec-vectors.mjs
       - run: node scripts/brand.mjs

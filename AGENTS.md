@@ -100,6 +100,9 @@ https://straitlink.in/docs/troubleshooting/.
 ## Working on this repo
 
 - Test: `./gradlew test   # JDK 17` (must pass before any commit; check the exit code).
+- R8 check: `scripts/r8-smoke.sh` (needs a device or emulator on adb) builds `examples/android` as a minified
+  release, opens a link in it and waits for the SDK's LinkEvent. Run it after any change to reflection, JSON
+  handling or dependencies: the SDK ships no keep rules, and the JVM tests can't see what R8 strips.
 - The match signature and the pure helpers are pinned by shared golden vectors
   (`src/test/resources/*vectors*.json`): byte-identical copies live in every app and web SDK (the signature vectors in the
   engine too). Never edit a vector file
