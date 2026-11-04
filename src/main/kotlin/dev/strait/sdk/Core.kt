@@ -344,6 +344,37 @@ internal fun newOpenId(now: Long, random: () -> Double = Math::random): String {
     return "o_${now.toString(36)}_$r"
 }
 
+/**
+ * A unique id for one conversion event when the app gives none (contract B13a): the engine
+ * stores an eventId once, so a retried send is never counted twice. Same shape as [newOpenId].
+ */
+internal fun newEventId(now: Long, random: () -> Double = Math::random): String = "e" + newOpenId(now, random).substring(1)
+
+/** What start() does with the once-per-install flag (contract B6a, shared-spec ADR 0003). */
+data class FirstLaunchState(
+    /** Run the once-per-install deferred check / count this launch as the install's first. */
+    val firstLaunch: Boolean,
+    /** Set `strait.deferredChecked` to "" first: the storage came back from another install. */
+    val clearFlag: Boolean,
+    /** Then write this to `strait.installTime` (null = leave it). */
+    val storeInstallTime: String?,
+)
+
+/**
+ * B6a: storage restored from a backup of another install (Android Auto Backup) brings back
+ * `strait.deferredChecked`. The app's install time, stored next to it, tells: a different
+ * stored time = a new install, so the check runs again. No stored time (an app updated from an
+ * older SDK) = adopt it, never a new install. Unknown install time (null, < 1, not finite) = B6 alone.
+ */
+internal fun firstLaunchState(flag: String?, storedInstallTime: String?, installTime: Double?): FirstLaunchState {
+    val t = installTime?.takeIf { it.isFinite() && it >= 1 }?.let { kotlin.math.floor(it).toLong().toString() }
+    val stored = storedInstallTime?.takeIf { it.isNotEmpty() }
+    if (flag != "1") return FirstLaunchState(true, false, if (t != null && t != stored) t else null)
+    if (t == null || t == stored) return FirstLaunchState(false, false, null)
+    if (stored == null) return FirstLaunchState(false, false, t)
+    return FirstLaunchState(true, true, t)
+}
+
 /** A link arriving this soon after the app came back to the front came "from background". */
 internal const val RESUME_WINDOW_MS: Long = 2000
 

@@ -104,8 +104,10 @@ dependencies { implementation("com.github.strait-link:strait-sdk-android:v0.8.4"
 | B10 never throws; network failure → `matched:false, reason:"network"` | ✓ | `StraitClient` |
 | B11 JSON built by an encoder (org.json / escaped builders) | ✓ | `StraitClient`, `Strait.build*Body` |
 | B12 `splitUrl` without `Uri`/`URI` (lower-cased, `+`/`%xx` decoded, fragment dropped) | ✓ | `Core.kt`, vectors |
+| B6a reinstall-safe first open: `installTime` stored as `strait.installTime`, `firstLaunchState` | ✓ | `StraitClient.start`, `Core.kt`, vectors v10 |
 | B13 `trackEvent`, `reportFingerprint` (origin `app`), `compareFingerprint` | ✓ | `StraitClient` |
-| B14 every open reported once (`newOpenId` = event id), retry queue `strait.pendingOpens` (`pruneOpenQueue`, `shouldRetryReport`), `pendingOpenReports()` / `flushOpenReports()`; `deviceClass` on resolve / open / store sheet (`deviceClassForSize`, sw600dp) | ✓ | `StraitClient`, `Core.kt`, vectors v9 |
+| B13a `trackEvent(eventId = …)` (else `newEventId`), offline events kept in `strait.pendingOpens` and sent to `/v1/event` | ✓ | `StraitClient` |
+| B14 every open reported once (`newOpenId` = event id), retry queue `strait.pendingOpens` (`pruneOpenQueue`, `shouldRetryReport`), `pendingOpenReports()` / `flushOpenReports()`; `deviceClass` on resolve / open / store sheet (`deviceClassForSize`, sw600dp) | ✓ | `StraitClient`, `Core.kt`, vectors v10 |
 | B15 conversion events carry the tap id (`strait.lastTap`, `eventClickId`, 7-day `ATTRIBUTION_WINDOW_MS`, explicit `clickId` override) | ✓ | `StraitClient`, `Core.kt`, vectors |
 | B16 every attributed open supplies the tap id (`/v1/resolve`, `/v1/match`, `/v1/referrer` reply `clickId` → `strait.lastTap`, `replyClickId`) | ✓ | `StraitClient`, `Core.kt`, vectors v4 |
 | B17 `screenWidth` is the portrait (shorter-side) width: `portraitScreenWidth(w, h)` | ✓ | `Core.kt`, README `device`, vectors v5 |
@@ -142,6 +144,7 @@ class App : Application() {
                 override fun set(key: String, value: String) { prefs.edit().putString(key, value).apply() }
             },
             installReferrer = { readInstallReferrer(this) },
+            installTime = { packageManager.getPackageInfo(packageName, 0).firstInstallTime }, // reinstalls, below
             device = {
                 val m = resources.displayMetrics
                 DeviceFields(
@@ -171,6 +174,24 @@ class App : Application() {
 > the brief pause that wraps link delivery to be reported exactly, also forward
 > your link Activity's `onPause`/`onResume`. The tracker treats pauses shorter
 > than 1000 ms as foreground either way.
+
+**Reinstalls and Auto Backup (`installTime`, contract B6a).** Android backs up SharedPreferences
+(Auto Backup is on by default) and puts them back when the app is installed again. Without
+`installTime`, the restored "deferred check done" flag makes a reinstall from a link skip its
+deferred link and go uncounted. With it, the SDK stores the install time next to the flag and runs
+the check again when `firstInstallTime` changed. An app update keeps `firstInstallTime`, so it is
+never a new install; an app updated from an older SDK adopts the time without a new check. Optional
+extra: keep the Strait prefs file (`strait` above) out of backups:
+
+```xml
+<!-- res/xml/data_extraction_rules.xml (Android 12+, android:dataExtractionRules) -->
+<data-extraction-rules>
+  <cloud-backup><exclude domain="sharedpref" path="strait.xml"/></cloud-backup>
+  <device-transfer><exclude domain="sharedpref" path="strait.xml"/></device-transfer>
+</data-extraction-rules>
+<!-- res/xml/backup_rules.xml (Android 11 and lower, android:fullBackupContent) -->
+<full-backup-content><exclude domain="sharedpref" path="strait.xml"/></full-backup-content>
+```
 
 ### 2. Feed it links (Activity)
 
@@ -260,7 +281,7 @@ fun readInstallReferrer(context: Context): String? {
 ### 4. Events and the fingerprint check (call off the main thread)
 
 ```kotlin
-strait.trackEvent("purchase", value = 49.99, currency = "USD", linkId = lastLinkId)
+strait.trackEvent("purchase", value = 49.99, currency = "USD", linkId = lastLinkId, eventId = order.id)
 strait.reportFingerprint()    // POST /v1/debug/fingerprint, origin "app"
 strait.compareFingerprint()   // GET  /v1/debug/fingerprint → JSONObject
 strait.checkDeferred()        // re-run the deferred check (debug; ignores the once-per-install flag)
@@ -271,6 +292,12 @@ the dashboard can place the revenue on that tap's channel and A/B variant
 (contracts B15/B16). Every attributed open supplies one: a browser hand-off, a
 Play install, or the engine's reply to a verified short link or a deferred
 match. A newer open replaces the older tap. Pass `clickId = …` to set it yourself.
+
+`eventId` is your id for the conversion (your order id; 1-64 of `A-Z a-z 0-9 _ . : -`): Strait
+stores each one once, so a retry or a second report of the same order never counts twice. Left
+out, the SDK makes one. An event that can't be sent (offline, server busy) is kept with the saved
+open reports and sent later, for up to 7 days; `trackEvent` then returns `false` (contract B13a).
+Refunds are not supported yet.
 
 HTTP defaults to `UrlConnectionTransport` (`HttpURLConnection`). To use OkHttp,
 implement `HttpTransport`: throw on network failure and return every HTTP

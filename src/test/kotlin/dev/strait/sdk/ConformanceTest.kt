@@ -45,6 +45,18 @@ class ConformanceTest {
     }
 
     @Test
+    fun firstLaunchStateVectors() {
+        for (c in objects("firstLaunchState")) {
+            val flag = if (c.isNull("flag")) null else c.getString("flag")
+            val stored = if (c.isNull("stored")) null else c.getString("stored")
+            val installTime = if (c.isNull("installTime")) null else c.getDouble("installTime")
+            val e = c.getJSONObject("expected")
+            val want = FirstLaunchState(e.getBoolean("firstLaunch"), e.getBoolean("clearFlag"), if (e.isNull("storeInstallTime")) null else e.getString("storeInstallTime"))
+            assertEquals(want, firstLaunchState(flag, stored, installTime), c.getString("name"))
+        }
+    }
+
+    @Test
     fun replyClickIdVectors() {
         for (c in objects("replyClickId")) {
             val reply = if (c.isNull("reply")) null else c.get("reply")
