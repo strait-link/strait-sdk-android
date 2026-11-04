@@ -174,8 +174,13 @@ class App : Application() {
 
 ### 2. Feed it links (Activity)
 
+This uses `ComponentActivity`, which new Android Studio projects already have. If yours doesn't, add
+`implementation("androidx.activity:activity:1.9.3")`. Already on `AppCompatActivity`? Keep it: it works the same.
+
 ```kotlin
-class MainActivity : AppCompatActivity() {
+import androidx.activity.ComponentActivity
+
+class MainActivity : ComponentActivity() {
     private val strait get() = (application as App).strait
 
     override fun onCreate(savedInstanceState: Bundle?) {
