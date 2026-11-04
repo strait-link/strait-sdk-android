@@ -3,6 +3,7 @@ package com.straitlink.example
 import android.app.Activity
 import android.content.Intent
 import android.os.Bundle
+import android.util.Log
 import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.TextView
@@ -58,5 +59,6 @@ class MainActivity : Activity() {
     // The client outlives this Activity (rotation recreates it): drop the listener so it isn't leaked.
     override fun onDestroy() { offLink?.invoke(); io.shutdown(); super.onDestroy() }
 
-    private fun show(line: String) { log.append(line + "\n") }
+    // Also to logcat (tag StraitExample): scripts/r8-smoke.sh reads the LinkEvent line from there.
+    private fun show(line: String) { Log.i("StraitExample", line); log.append(line + "\n") }
 }
