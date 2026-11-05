@@ -46,3 +46,17 @@ query string, not even utm_source): no openId, platform, device class or app sta
 with the destination and no `clickId`; nothing is queued, remembered or retried. A failed lookup (offline,
 429, or an engine without it: 404, so it fails closed) comes back `reason: 'disabled'` as before. This is
 the one engine call allowed while off; it bypasses the opt-out gate by name, nothing else does.
+
+## Update 5 Nov 2026: follow-ups F1 + F4 (`ops/run-1105/sdk-privacy-followups.md`)
+- **F1, User-Agent.** `UrlConnectionTransport` sent Android's default UA, `Dalvik/2.1.0 (Linux; U;
+  Android 14; <model> Build/...)`, on every call, including the opt-out `/v1/lookup`, so the phone model
+  reached Cloudflare and Render request logs. It now sends `strait-android/<version>` and nothing about
+  the device. Checked first: the engine reads the UA for matching only as the iOS major version
+  (`match-signals.ts`, `iosMajorFromUA`), never on Android, and the platform comes from the body. One side
+  effect, accepted: test mode's per-phone key (engine ADR 0071, UA + screen + density + language + time
+  zone) can no longer tell apart two Android test phones with identical screen, density, language and time
+  zone in the same test window. A custom `HttpTransport` keeps full control of its headers.
+- **F4, switch-off mid-call.** `setEnabled(false)` while `/v1/resolve` was out (another thread) made the
+  call fail at the gate and the link came back `reason = "network"`. A failed resolve now re-reads the
+  switch and, when off, routes through `/v1/lookup` as an opted-out tap does; nothing is queued. (A reply
+  that lands after the switch went off already kept no tap: `noteTap` checks the switch.)
