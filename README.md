@@ -434,7 +434,10 @@ App Link on your Strait host), shows the deferred link after an install and logs
 builds the SDK from this repo's source, and CI builds it on every pull request.
 
 1. `cp examples/android/strait.example.properties examples/android/strait.properties` and set your
-   publishable key (`st_pub_…`, Dashboard → Get started; the file is git-ignored).
+   publishable key (`st_pub_…`, Dashboard → Get started; the file is git-ignored) and `STRAIT_ENDPOINT`,
+   your link domain (`https://<handle>.strait.link`); the App Links host in the manifest follows it. For
+   the App Link to open the app, add `com.straitlink.example` and your debug key's SHA-256 in
+   **Dashboard → Apps & stores**.
 2. `./gradlew -p examples/android installDebug` from the repo root, with a phone or emulator attached
    (JDK 17+, Android SDK).
 3. `adb shell am start -a android.intent.action.VIEW -d "straitsample://product/42"` shows the link on screen.

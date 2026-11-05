@@ -1,3 +1,4 @@
+import java.net.URI
 import java.util.Properties
 
 plugins {
@@ -23,6 +24,8 @@ android {
         versionName = "1.0"
         buildConfigField("String", "STRAIT_PUBLISHABLE_KEY", "\"${strait("STRAIT_PUBLISHABLE_KEY")}\"")
         buildConfigField("String", "STRAIT_ENDPOINT", "\"${strait("STRAIT_ENDPOINT")}\"")
+        // The App Links host in the manifest is your endpoint's host, so one setting points both at your workspace.
+        manifestPlaceholders["straitHost"] = requireNotNull(URI(strait("STRAIT_ENDPOINT")).host) { "STRAIT_ENDPOINT must be https://<your link domain>" }
     }
     buildFeatures { buildConfig = true }
     // Shrunk and obfuscated with R8, like a typical release: scripts/r8-smoke.sh runs this build on a device, so SDK code
