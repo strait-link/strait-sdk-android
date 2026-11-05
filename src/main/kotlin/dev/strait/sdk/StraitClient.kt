@@ -170,6 +170,7 @@ private const val DEFERRED_FLAG = "strait.deferredChecked"
 private const val QUEUE_KEY = "strait.pendingOpens"
 private const val TAP_KEY = "strait.lastTap"
 private const val INSTALL_TIME_KEY = "strait.installTime"
+private const val ENABLED_KEY = "strait.enabled"
 
 /**
  * Strait link client (contract B1-B15). Never throws from link handling.
@@ -187,6 +188,11 @@ class StraitClient(private val config: StraitConfig) {
     private val tapLock = Any()
     private val flushing = AtomicBoolean(false)
     @Volatile private var stopped = false
+    /** Opt-out switch, read from storage once; unreadable storage = the default (on). */
+    @Volatile private var enabled: Boolean? = null
+    private val enabledLock = Any()
+    /** The first-launch check was skipped because the SDK was off: setEnabled(true) runs it. */
+    private val deferredDue = AtomicBoolean(false)
     /** The jitter source for the queue backoff (C1); tests pin it. */
     internal var random: () -> Double = Math::random
 
@@ -216,9 +222,8 @@ class StraitClient(private val config: StraitConfig) {
                     if (firstLaunch) runCatching { config.storage.set(DEFERRED_FLAG, "1") }
                     resolveDirect(initial, AppStateAtLink.CLOSED, firstLaunch)
                 } else if (firstLaunch) {
-                    // Marked done only once the engine answered: offline -> next launch.
-                    val e = runDeferred(record = true)
-                    if (e.reason != "network") runCatching { config.storage.set(DEFERRED_FLAG, "1") }
+                    if (isEnabled()) firstCheck()
+                    else deferredDue.set(true) // opted out: not marked done, runs when switched back on
                 }
             }
             flush()
@@ -316,7 +321,7 @@ class StraitClient(private val config: StraitConfig) {
     fun trackEvent(
         name: String, value: Double? = null, currency: String? = null, linkId: String? = null, clickId: String? = null,
         eventId: String? = null,
-    ): Boolean = try {
+    ): Boolean = if (!isEnabled()) false else try {
         val at = config.clock()
         // B13a: built once (tap id chosen now), with an eventId so a retry is stored once.
         val event = JSONObject()
@@ -381,6 +386,34 @@ class StraitClient(private val config: StraitConfig) {
     /** Send saved open reports now (blocking; also happens on start and on resume). */
     fun flushOpenReports() = flush()
 
+    /**
+     * Opt-out switch for consent flows (default on, kept in [StraitConfig.storage] across launches). Off: no
+     * open reports, no events, no deferred matching, nothing remembered; reports saved earlier and the
+     * remembered tap are deleted. A link that carries its own destination still reaches onLink; a short
+     * link needs a lookup that counts the tap, so it comes back `reason = "disabled"`. Back on: sending
+     * resumes, and a first-launch check skipped while off runs now (on the executor).
+     */
+    fun setEnabled(enabled: Boolean) {
+        synchronized(enabledLock) { this.enabled = enabled }
+        runCatching { config.storage.set(ENABLED_KEY, if (enabled) "1" else "0") }
+        config.executor.execute {
+            if (!enabled) {
+                // Opting out also deletes what was saved to send later (under the locks, so a write
+                // that began before the switch can't put anything back).
+                safely { synchronized(queueLock) { writeQueue(emptyList()) } }
+                safely { synchronized(tapLock) { runCatching { config.storage.set(TAP_KEY, "") } } }
+            } else {
+                if (isEnabled() && deferredDue.getAndSet(false)) safely { firstCheck() }
+                flush()
+            }
+        }
+    }
+
+    /** The opt-out switch's current value (see [setEnabled]). */
+    fun isEnabled(): Boolean = enabled ?: synchronized(enabledLock) {
+        enabled ?: (runCatching { config.storage.get(ENABLED_KEY) }.getOrNull() != "0").also { enabled = it }
+    }
+
     /** Stop handling new URLs and lifecycle changes. Already-emitted events stay replayable. */
     fun stop() {
         stopped = true
@@ -401,7 +434,9 @@ class StraitClient(private val config: StraitConfig) {
         return e
     }
 
+    /** Every engine call goes through here: while opted out nothing leaves the device. */
     private fun call(method: String, path: String, body: JSONObject?): Pair<HttpResponse, JSONObject> {
+        if (!isEnabled()) throw java.io.IOException("disabled")
         val res = config.transport.request("$base$path", method, body?.toString())
         val json = try {
             JSONObject(res.body ?: "")
@@ -416,7 +451,7 @@ class StraitClient(private val config: StraitConfig) {
     // (short link, fingerprint match) forgets it: the newer touch wins.
     // Storage failures are ignored.
     private fun noteTap(clickId: String?, at: Long) = synchronized(tapLock) {
-        runCatching { config.storage.set(TAP_KEY, if (clickId != null) rememberTap(clickId, at) else "") }
+        if (isEnabled()) runCatching { config.storage.set(TAP_KEY, if (clickId != null) rememberTap(clickId, at) else "") }
     }
 
     /** B18: delete an expired remembered tap instead of only ignoring it. Re-read
@@ -448,7 +483,7 @@ class StraitClient(private val config: StraitConfig) {
     }
 
     private fun enqueue(report: JSONObject) = synchronized(queueLock) {
-        writeQueue(pruneOpenQueue(readQueue() + report, config.clock()) { it.optLong("at") })
+        if (isEnabled()) writeQueue(pruneOpenQueue(readQueue() + report, config.clock()) { it.optLong("at") })
     }
 
     // C1: after a 429/5xx the queue waits retryDelayMs (exponential, jittered, at least the
@@ -483,7 +518,7 @@ class StraitClient(private val config: StraitConfig) {
     }
 
     private fun flush() {
-        if (!flushing.compareAndSet(false, true)) return
+        if (!isEnabled() || !flushing.compareAndSet(false, true)) return
         try {
             if (config.clock() < synchronized(backoffLock) { holdUntil }) return // C1: the server asked us to wait
             synchronized(queueLock) {
@@ -528,14 +563,18 @@ class StraitClient(private val config: StraitConfig) {
         val c = classifyUrl(raw, linkHosts)
             ?: return emit(LinkEvent(id, "direct", LinkRoute.APP_LINK, appState, false, reason = "invalid_url",
                 rawUrl = raw, ms = config.clock() - t0, at = t0))
+        val on = isEnabled()
         if (!c.needsResolve) {
-            if (c.clickId != null) noteTap(c.clickId, t0)
+            if (c.clickId != null && on) noteTap(c.clickId, t0)
             val e = emit(LinkEvent(id, "direct", c.route, appState, true, rawUrl = raw, url = c.url, path = c.path,
                 params = c.params, ms = config.clock() - t0, at = t0))
             // Navigation never waits for the report: it is sent after the event.
-            safely { report(openReport(id, c.route, appState, c.url!!, true, firstLaunch, t0, clickId = c.clickId)) }
+            if (on) safely { report(openReport(id, c.route, appState, c.url!!, true, firstLaunch, t0, clickId = c.clickId)) }
             return e
         }
+        // Opted out: the lookup would count the tap, so a short link can't be resolved.
+        if (!on) return emit(LinkEvent(id, "direct", LinkRoute.APP_LINK, appState, false, reason = "disabled",
+            rawUrl = raw, ms = config.clock() - t0, at = t0))
         // The lookup is also the open report (openId); the engine says whether
         // it recorded it, and anything short of that is retried via /v1/open.
         return try {
@@ -576,6 +615,7 @@ class StraitClient(private val config: StraitConfig) {
     private fun runDeferred(record: Boolean): LinkEvent {
         val t0 = config.clock()
         val id = newOpenId(t0)
+        if (!isEnabled()) return LinkEvent(id, "deferred", LinkRoute.FINGERPRINT, AppStateAtLink.CLOSED, false, reason = "disabled", ms = 0, at = t0)
         announce(LinkStart(id, "deferred", AppStateAtLink.CLOSED, null, t0))
         fun tag(body: JSONObject): JSONObject = if (record) body.put("openId", id).put("at", t0) else body.put("record", false)
         // No answer, 429 or 5xx = try again next launch (reported as 'network').
@@ -621,6 +661,12 @@ class StraitClient(private val config: StraitConfig) {
             emit(LinkEvent(id, "deferred", LinkRoute.FINGERPRINT, AppStateAtLink.CLOSED, false, reason = "network",
                 ms = config.clock() - t0, at = t0))
         }
+    }
+
+    /** The once-per-install check; marked done only once the engine answered (offline -> next launch). */
+    private fun firstCheck() {
+        val e = runDeferred(record = true)
+        if (e.reason != "network" && e.reason != "disabled") runCatching { config.storage.set(DEFERRED_FLAG, "1") }
     }
 
     private class Dest(val url: String? = null, val path: String? = null, val params: Map<String, String>? = null)

@@ -406,6 +406,11 @@ A page.link short link (`https://<x>.page.link/aBcD`) is then looked up like any
 People without your app still land on whatever Google serves. Covered by unit tests; not yet tested on a
 real phone.
 
+## User consent / opt-out
+
+If your app asks for consent first (for example under India's DPDP Act or a GDPR consent flow in the EU), call `strait.setEnabled(false)` until the person agrees: Strait then sends no open reports or events, does no install matching, and deletes reports waiting on the device. The choice is kept across launches in your `storage`; `setEnabled(true)` turns it back on (default: on) and `isEnabled()` reads it.
+Links that carry their own destination still open your screens; a short link needs a lookup that counts the tap, so it comes back `matched = false, reason = "disabled"`. Whether you need consent, and for what, is a question for your own legal advice.
+
 ## Lower-level helpers (signature only; the rest internal since 0.8.0)
 
 `computeSignature` / `h32` (the cross-language deferred-match signature). The contract helpers in
