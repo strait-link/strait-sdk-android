@@ -390,7 +390,8 @@ class StraitClient(private val config: StraitConfig) {
      * Opt-out switch for consent flows (default on, kept in [StraitConfig.storage] across launches). Off: no
      * open reports, no events, no deferred matching, nothing remembered; reports saved earlier and the
      * remembered tap are deleted. A link that carries its own destination still reaches onLink; a short
-     * link needs a lookup that counts the tap, so it comes back `reason = "disabled"`. Back on: sending
+     * link is looked up through /v1/lookup, which records nothing (no tap, no open, no tap id), so it still
+     * routes (`reason = "disabled"` only if that lookup fails). Back on: sending
      * resumes, and a first-launch check skipped while off runs now (on the executor).
      */
     fun setEnabled(enabled: Boolean) {
@@ -434,9 +435,12 @@ class StraitClient(private val config: StraitConfig) {
         return e
     }
 
-    /** Every engine call goes through here: while opted out nothing leaves the device. */
-    private fun call(method: String, path: String, body: JSONObject?): Pair<HttpResponse, JSONObject> {
-        if (!isEnabled()) throw java.io.IOException("disabled")
+    /**
+     * Every engine call goes through here: while opted out nothing leaves the device, except
+     * [lookupOnly] (/v1/lookup: where a short link goes, recorded nowhere, engine ADR 0083).
+     */
+    private fun call(method: String, path: String, body: JSONObject?, lookupOnly: Boolean = false): Pair<HttpResponse, JSONObject> {
+        if (!lookupOnly && !isEnabled()) throw java.io.IOException("disabled")
         val res = config.transport.request("$base$path", method, body?.toString())
         val json = try {
             JSONObject(res.body ?: "")
@@ -572,9 +576,21 @@ class StraitClient(private val config: StraitConfig) {
             if (on) safely { report(openReport(id, c.route, appState, c.url!!, true, firstLaunch, t0, clickId = c.clickId)) }
             return e
         }
-        // Opted out: the lookup would count the tap, so a short link can't be resolved.
-        if (!on) return emit(LinkEvent(id, "direct", LinkRoute.APP_LINK, appState, false, reason = "disabled",
-            rawUrl = raw, ms = config.clock() - t0, at = t0))
+        // Opted out: ask only where the link goes (/v1/lookup records nothing). Key + host + path only;
+        // no open report, no tap kept, no retry. An engine without it (404) or no network: "disabled".
+        if (!on) {
+            val json = try {
+                val body = JSONObject().put("publishableKey", config.publishableKey).put("url", reportUrl(raw))
+                call("POST", "/v1/lookup", body, lookupOnly = true).let { (res, j) -> if (res.ok) j else JSONObject() }
+            } catch (_: Exception) {
+                JSONObject()
+            }
+            val matched = json.opt("matched") == true
+            val dest = destination(if (matched) str(json, "longUrl") else null)
+            return emit(LinkEvent(id, "direct", LinkRoute.APP_LINK, appState, matched,
+                reason = if (matched) null else (str(json, "reason") ?: "disabled"), rawUrl = raw, url = dest.url,
+                path = dest.path, params = dest.params, linkId = str(json, "linkId"), ms = config.clock() - t0, at = t0))
+        }
         // The lookup is also the open report (openId); the engine says whether
         // it recorded it, and anything short of that is retried via /v1/open.
         return try {
