@@ -107,7 +107,7 @@ dependencies { implementation("com.github.strait-link:strait-sdk-android:v0.8.4"
 | B6a reinstall-safe first open: `installTime` stored as `strait.installTime`, `firstLaunchState` | ✓ | `StraitClient.start`, `Core.kt`, vectors v10 |
 | B13 `trackEvent`, `reportFingerprint` (origin `app`), `compareFingerprint` | ✓ | `StraitClient` |
 | B13a `trackEvent(eventId = …)` (else `newEventId`), offline events kept in `strait.pendingOpens` and sent to `/v1/event` | ✓ | `StraitClient` |
-| B14 every open reported once (`newOpenId` = event id), retry queue `strait.pendingOpens` (`pruneOpenQueue`, `shouldRetryReport`), `pendingOpenReports()` / `flushOpenReports()`; `deviceClass` on resolve / open / store sheet (`deviceClassForSize`, sw600dp) | ✓ | `StraitClient`, `Core.kt`, vectors v10 |
+| B14 every open reported once (`newOpenId` = event id), retry queue `strait.pendingOpens` (`pruneOpenQueue`, `shouldRetryReport`), `pendingOpenReports()` / `flushOpenReports()`, backoff after a 429/5xx (`retryDelayMs`, C1); `deviceClass` on resolve / open / store sheet (`deviceClassForSize`, sw600dp) | ✓ | `StraitClient`, `Core.kt`, vectors v11 |
 | B15 conversion events carry the tap id (`strait.lastTap`, `eventClickId`, 7-day `ATTRIBUTION_WINDOW_MS`, explicit `clickId` override) | ✓ | `StraitClient`, `Core.kt`, vectors |
 | B16 every attributed open supplies the tap id (`/v1/resolve`, `/v1/match`, `/v1/referrer` reply `clickId` → `strait.lastTap`, `replyClickId`) | ✓ | `StraitClient`, `Core.kt`, vectors v4 |
 | B17 `screenWidth` is the portrait (shorter-side) width: `portraitScreenWidth(w, h)` | ✓ | `Core.kt`, README `device`, vectors v5 |
@@ -241,8 +241,10 @@ by default the SDK reads `smallestScreenWidthDp` from the system configuration
 Reports that can't be sent (offline, server busy) are saved in `storage` under
 `strait.pendingOpens` and retried on the next `start`, whenever
 `onAppState(ACTIVE)` is called, and after any report that gets through, for up
-to 7 days (max 100). The engine de-duplicates by open id (`LinkEvent.id`), so
-nothing is counted twice. Navigation never waits for a report: `onLink` fires
+to 7 days (max 100). When the server is busy (429 or 5xx) the SDK waits before
+sending the saved ones again: 15–30 s, doubling each time in a row up to 1 hour,
+and at least as long as the server's `Retry-After`. The engine de-duplicates by
+open id (`LinkEvent.id`), so nothing is counted twice. Navigation never waits for a report: `onLink` fires
 before it is sent. The first launch of an install is marked as such, so
 dashboards can tell **new users** (installed and opened) from **existing
 users** (already had the app). The deferred check is only marked done once the

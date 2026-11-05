@@ -74,7 +74,8 @@ class MemoryStore : KeyValueStore {
     override fun set(key: String, value: String) { data[key] = value }
 }
 
-data class HttpResponse(val status: Int, val body: String?) {
+/** [retryAfter]: the response's `Retry-After` header, if any (the open/event queue's backoff floor, C1). */
+data class HttpResponse @JvmOverloads constructor(val status: Int, val body: String?, val retryAfter: String? = null) {
     val ok: Boolean get() = status in 200..299
 }
 
@@ -106,7 +107,7 @@ class UrlConnectionTransport(
             val status = conn.responseCode
             val stream = if (status in 200..299) conn.inputStream else conn.errorStream
             val body = stream?.bufferedReader(Charsets.UTF_8)?.use { it.readText() }
-            return HttpResponse(status, body)
+            return HttpResponse(status, body, conn.getHeaderField("Retry-After"))
         } finally {
             conn.disconnect()
         }
@@ -173,6 +174,8 @@ class StraitClient(private val config: StraitConfig) {
     private val tapLock = Any()
     private val flushing = AtomicBoolean(false)
     @Volatile private var stopped = false
+    /** The jitter source for the queue backoff (C1); tests pin it. */
+    internal var random: () -> Double = Math::random
 
     /**
      * Handle the launch link (Activity.onCreate intent data, or null), then run
@@ -435,16 +438,27 @@ class StraitClient(private val config: StraitConfig) {
         writeQueue(pruneOpenQueue(readQueue() + report, config.clock()) { it.optLong("at") })
     }
 
+    // C1: after a 429/5xx the queue waits retryDelayMs (exponential, jittered, at least the
+    // Retry-After) before it sends again; any other answer ends the wait. No answer adds none.
+    private val backoffLock = Any()
+    private var failures = 0
+    private var holdUntil = 0L
+
     /** POST /v1/open (or /v1/event for a saved event, B13a); the HTTP status, or null when there was no answer. */
     private fun sendReport(report: JSONObject): Int? = try {
         val body = JSONObject(report.toString()).put("publishableKey", config.publishableKey)
-        if (body.optString("type") == "event") {
+        val res = if (body.optString("type") == "event") {
             body.remove("type"); body.remove("at")
-            call("POST", "/v1/event", body).first.status
+            call("POST", "/v1/event", body).first
         } else {
             if (deviceClass != null) body.put("deviceClass", deviceClass) // B14: added at send time, never queued
-            call("POST", "/v1/open", body).first.status
+            call("POST", "/v1/open", body).first
         }
+        synchronized(backoffLock) {
+            if (shouldRetryReport(res.status)) holdUntil = config.clock() + retryDelayMs(++failures, res.retryAfter, random())
+            else { failures = 0; holdUntil = 0 }
+        }
+        res.status
     } catch (_: Exception) {
         null
     }
@@ -458,18 +472,18 @@ class StraitClient(private val config: StraitConfig) {
     private fun flush() {
         if (!flushing.compareAndSet(false, true)) return
         try {
+            if (config.clock() < synchronized(backoffLock) { holdUntil }) return // C1: the server asked us to wait
             synchronized(queueLock) {
                 val queue = pruneOpenQueue(readQueue(), config.clock()) { it.optLong("at") }
                 val keep = ArrayList<JSONObject>()
-                var offline = false
+                var stop = false
                 for (rep in queue) {
-                    // Once one gets no answer at all, keep the rest for later.
-                    if (offline) {
+                    // Once one gets no answer, a 429 or a 5xx, keep the rest for later.
+                    if (stop) {
                         keep += rep; continue
                     }
-                    val status = sendReport(rep)
-                    offline = status == null
-                    if (shouldRetryReport(status)) keep += rep
+                    stop = shouldRetryReport(sendReport(rep))
+                    if (stop) keep += rep
                 }
                 writeQueue(keep)
             }

@@ -165,6 +165,14 @@ class ConformanceTest {
     }
 
     @Test
+    fun retryDelayVectors() {
+        for (c in objects("retryDelay")) {
+            val retryAfter = if (c.isNull("retryAfter")) null else c.getString("retryAfter")
+            assertEquals(c.getLong("expected"), retryDelayMs(c.getInt("failures"), retryAfter, c.getDouble("random")), c.getString("name"))
+        }
+    }
+
+    @Test
     fun newOpenIdShape() {
         val id = newOpenId(1_800_000_000_000)
         assertTrue(Regex("^o_[a-z0-9]+_[a-z0-9]{12}$").matches(id), id)

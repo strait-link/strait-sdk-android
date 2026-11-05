@@ -20,11 +20,12 @@ class OpensTest {
     private val pk = "bk_pub_test_appowner01"
     private val endpoint = "https://links.test"
     private val click = "3f2a9c1e-7b4d-4e8a-9c0f-1a2b3c4d5e6f"
+    private val hour = 3_600_000L
     private val openIdRe = Regex("^o_[a-z0-9]+_[a-z0-9]{12}$")
     private val device = DeviceFields(411, 2.625, "en", "Asia/Kolkata")
 
     private sealed class Reply {
-        data class Status(val status: Int = 200, val body: JSONObject = JSONObject()) : Reply()
+        data class Status(val status: Int = 200, val body: JSONObject = JSONObject(), val retryAfter: String? = null) : Reply()
         object Offline : Reply()
         class Hang(val release: CountDownLatch) : Reply()
     }
@@ -44,7 +45,7 @@ class OpensTest {
                 is Reply.Hang -> {
                     r.release.await(10, TimeUnit.SECONDS); throw java.io.IOException("timeout")
                 }
-                is Reply.Status -> HttpResponse(r.status, r.body.toString())
+                is Reply.Status -> HttpResponse(r.status, r.body.toString(), r.retryAfter)
             }
         }
     }
@@ -188,9 +189,106 @@ class OpensTest {
         h.client.handleUrl("straitlink://a.b/1")
         assertEquals(1, h.client.pendingOpenReports())
         engine.routes["/v1/open"] = Reply.Status(429)
+        h.t += hour // past the backoff hold (C1)
         h.client.flushOpenReports()
         assertEquals(1, h.client.pendingOpenReports())
         engine.routes["/v1/open"] = Reply.Status(400, JSONObject().put("error", "bad"))
+        h.t += hour
+        h.client.flushOpenReports()
+        assertEquals(0, h.client.pendingOpenReports())
+    }
+
+    // --- C1: a server under load (429/5xx) is not hammered by every phone's queue
+
+    private fun queueThree(h: Harness) {
+        h.engine.routes["/v1/open"] = Reply.Offline
+        for (p in 1..3) h.client.handleUrl("straitlink://a.b/$p")
+        assertEquals(3, h.client.pendingOpenReports())
+        h.engine.calls.clear()
+    }
+
+    @Test
+    fun c1FlushStopsAtTheFirst429Or5xxTheRestStaySavedAndUnsent() {
+        val h = Harness(FakeEngine(), returning())
+        h.client.start(null)
+        queueThree(h)
+        h.engine.routes["/v1/open"] = Reply.Status(503)
+        h.client.flushOpenReports()
+        assertEquals(1, h.engine.of("/v1/open").size)
+        assertEquals(3, h.client.pendingOpenReports())
+    }
+
+    @Test
+    fun c1HoldsTheQueueForTheRetryAfterOfA429() {
+        val h = Harness(FakeEngine(), returning())
+        h.client.start(null)
+        queueThree(h)
+        h.engine.routes["/v1/open"] = Reply.Status(429, retryAfter = "120")
+        h.client.flushOpenReports()
+        assertEquals(1, h.engine.of("/v1/open").size)
+        h.engine.routes["/v1/open"] = accepted
+        h.t += 119_000
+        h.client.flushOpenReports()
+        assertEquals(1, h.engine.of("/v1/open").size) // held
+        h.setState(AppLifecycleState.BACKGROUND); h.t += 5000; h.setState(AppLifecycleState.ACTIVE) // foreground at 124 s: past the hold
+        assertEquals(4, h.engine.of("/v1/open").size)
+        assertEquals(0, h.client.pendingOpenReports())
+    }
+
+    @Test
+    fun c1NothingIsSentWhileHeld() {
+        val h = Harness(FakeEngine(), returning())
+        h.client.start(null)
+        queueThree(h)
+        h.engine.routes["/v1/open"] = Reply.Status(429, retryAfter = "120")
+        h.client.flushOpenReports()
+        h.engine.routes["/v1/open"] = accepted
+        h.t += 119_999
+        h.client.flushOpenReports()
+        h.setState(AppLifecycleState.BACKGROUND); h.setState(AppLifecycleState.ACTIVE)
+        assertEquals(1, h.engine.of("/v1/open").size)
+        h.t += 1
+        h.client.flushOpenReports()
+        assertEquals(4, h.engine.of("/v1/open").size)
+    }
+
+    @Test
+    fun c1WithoutRetryAfterBacksOffExponentiallyAndAnAnswerResetsIt() {
+        val h = Harness(FakeEngine(), returning())
+        h.client.start(null)
+        queueThree(h)
+        h.client.random = { 0.0 } // the shortest jitter: half the step
+        h.engine.routes["/v1/open"] = Reply.Status(503)
+        h.client.flushOpenReports() // failure 1: hold 15 s
+        h.t += 14_999
+        h.client.flushOpenReports()
+        assertEquals(1, h.engine.of("/v1/open").size)
+        h.t += 1
+        h.client.flushOpenReports() // failure 2: hold 30 s
+        assertEquals(2, h.engine.of("/v1/open").size)
+        h.t += 29_999
+        h.client.flushOpenReports()
+        assertEquals(2, h.engine.of("/v1/open").size)
+        h.t += 1
+        h.engine.routes["/v1/open"] = accepted
+        h.client.flushOpenReports() // answered: sent, hold cleared
+        assertEquals(5, h.engine.of("/v1/open").size)
+        h.engine.routes["/v1/open"] = Reply.Status(502)
+        h.client.handleUrl("straitlink://a.b/4") // live report fails: failure 1 again (15 s, not 60 s)
+        h.engine.routes["/v1/open"] = accepted
+        h.t += 15_000
+        h.client.flushOpenReports()
+        assertEquals(0, h.client.pendingOpenReports())
+    }
+
+    @Test
+    fun c1NoAnswerAddsNoHold() {
+        val h = Harness(FakeEngine(), returning())
+        h.client.start(null)
+        queueThree(h)
+        h.client.flushOpenReports() // still offline: stops at the first
+        assertEquals(1, h.engine.of("/v1/open").size)
+        h.engine.routes["/v1/open"] = accepted
         h.client.flushOpenReports()
         assertEquals(0, h.client.pendingOpenReports())
     }
