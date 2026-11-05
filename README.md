@@ -145,6 +145,7 @@ class App : Application() {
             },
             installReferrer = { readInstallReferrer(this) },
             installTime = { packageManager.getPackageInfo(packageName, 0).firstInstallTime }, // reinstalls, below
+            appVersion = { packageManager.getPackageInfo(packageName, 0).versionName },          // "which app version?"
             device = {
                 val m = resources.displayMetrics
                 DeviceFields(
@@ -235,6 +236,11 @@ by default the SDK reads `smallestScreenWidthDp` from the system configuration
 (600 dp or more = tablet, the standard sw600dp rule). To set it yourself, pass
 `deviceClass = deviceClassForSize(resources.configuration.smallestScreenWidthDp.toDouble())`
 (or `null` to send nothing) to `StraitConfig`. Older engines ignore it.
+
+Every recorded open and install (`/v1/resolve`, `/v1/open`, `/v1/referrer`, `/v1/match`, saved retries too) also
+sends `sdkVersion` (this SDK's version) and, when you pass `appVersion`, your app's `versionName` (trimmed, at most
+64 characters, left out unless plain ASCII), so support can see which build a report came from. Events and
+`/v1/lookup` send neither; while `setEnabled(false)` nothing is sent.
 
 
 | How the app opened | Reported via | Joined to |

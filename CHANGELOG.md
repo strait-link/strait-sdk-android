@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- New: open and install reports carry the app's version and the SDK's version (`appVersion`, `sdkVersion`), so
+  when someone says "links stopped working", support can see which app build sent each report. Pass
+  `StraitConfig.appVersion = { packageManager.getPackageInfo(packageName, 0).versionName }`; it is read once,
+  trimmed, cut to 64 characters and left out unless plain ASCII. Sent on `/v1/resolve`, `/v1/open` (saved retries
+  too), `/v1/referrer` and `/v1/match`; never on events or `/v1/lookup`, and nothing while `setEnabled(false)`.
+  Older engines ignore both fields.
 - Privacy: the default `UrlConnectionTransport` sends `User-Agent: strait-android` instead of
   Android's default (`Dalvik/2.1.0 (Linux; U; Android 14; <model> Build/...)`), so no phone model reaches
   request logs. Matching never used it on Android.
