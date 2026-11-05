@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Privacy: the default `UrlConnectionTransport` sends `User-Agent: strait-android` instead of
+  Android's default (`Dalvik/2.1.0 (Linux; U; Android 14; <model> Build/...)`), so no phone model reaches
+  request logs. Matching never used it on Android.
+- Fix: switching the SDK off while a short link's `/v1/resolve` is still out no longer answers
+  `reason = "network"`; the link routes through `/v1/lookup` as an opted-out tap does, and nothing is queued.
 - New: `setEnabled(false)`, an opt-out switch for consent flows (DPDP, GDPR). While off the SDK sends
   no open reports or events and does no deferred matching; reports saved on the device and the remembered
   tap are deleted. Kept across launches (`strait.enabled` in `storage`); `setEnabled(true)` resumes and runs

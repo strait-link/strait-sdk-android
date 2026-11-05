@@ -105,6 +105,45 @@ class OptOutTest {
     }
 
     @Test
+    fun switchedOffWhileResolveIsInFlightRoutesThroughLookup() {
+        // F4: the switch goes off while /v1/resolve is out and that call fails: route via /v1/lookup, not
+        // 'network', and save no report to send later.
+        lateinit var c: StraitClient
+        val e = Engine { path ->
+            if (path == "/v1/resolve") { c.setEnabled(false); throw java.io.IOException("offline") }
+            HttpResponse(200, """{"matched":true,"longUrl":"https://shop.example/p/42","linkId":"lnk_42"}""")
+        }
+        val s = MemoryStore()
+        c = client(e, s)
+        val links = mutableListOf<LinkEvent>()
+        c.onLink { links += it }
+        c.handleUrl("https://acme.strait.link/sale")
+        assertEquals(listOf("/v1/resolve", "/v1/lookup"), e.calls)
+        assertTrue(links.single().let { it.matched && it.path == "/p/42" && it.reason == null })
+        assertEquals(0, c.pendingOpenReports())
+        assertEquals("", s.get("strait.lastTap") ?: "")
+    }
+
+    @Test
+    fun switchedOffWhileResolveIsInFlightKeepsNoTap() {
+        // The reply arrives after the switch went off: the link routes, but no tap is remembered or queued.
+        lateinit var c: StraitClient
+        val e = Engine { path ->
+            if (path == "/v1/resolve") c.setEnabled(false)
+            HttpResponse(200, """{"matched":true,"longUrl":"https://shop.example/p/42","linkId":"lnk_42","clickId":"3f2a9c1e-7b4d-4e8a-9f10-2c3d4e5f6a7b"}""")
+        }
+        val s = MemoryStore()
+        c = client(e, s)
+        val links = mutableListOf<LinkEvent>()
+        c.onLink { links += it }
+        c.handleUrl("https://acme.strait.link/sale")
+        assertTrue(links.single().matched)
+        assertEquals(listOf("/v1/resolve"), e.calls)
+        assertEquals(0, c.pendingOpenReports())
+        assertEquals("", s.get("strait.lastTap") ?: "")
+    }
+
+    @Test
     fun persistsAcrossLaunches() {
         val s = MemoryStore()
         client(Engine(), s).setEnabled(false)

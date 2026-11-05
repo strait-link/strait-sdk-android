@@ -112,6 +112,10 @@ class UrlConnectionTransport(
             conn.connectTimeout = connectTimeoutMs
             conn.readTimeout = readTimeoutMs
             conn.setRequestProperty("Accept", "application/json")
+            // Names only the SDK: Android's default UA carries the phone model (Dalvik/... <model> Build/...).
+            // No version: the engine's test-mode phone key hashes the UA (ADR 0071), so a version would
+            // unpin a registered test phone at every SDK upgrade.
+            conn.setRequestProperty("User-Agent", "strait-android")
             if (jsonBody != null) {
                 conn.doOutput = true
                 conn.setRequestProperty("Content-Type", "application/json")
@@ -578,7 +582,7 @@ class StraitClient(private val config: StraitConfig) {
         }
         // Opted out: ask only where the link goes (/v1/lookup records nothing). Key + host + path, no query;
         // no open report, no tap kept, no retry. An engine without it (404) or no network: "disabled".
-        if (!on) {
+        fun lookupOnly(): LinkEvent {
             val json = try {
                 val body = JSONObject().put("publishableKey", config.publishableKey).put("url", reportUrl(raw).substringBefore('?'))
                 call("POST", "/v1/lookup", body, lookupOnly = true).let { (res, j) -> if (res.ok) j else JSONObject() }
@@ -591,6 +595,7 @@ class StraitClient(private val config: StraitConfig) {
                 reason = if (matched) null else (str(json, "reason") ?: "disabled"), rawUrl = raw, url = dest.url,
                 path = dest.path, params = dest.params, linkId = str(json, "linkId"), ms = config.clock() - t0, at = t0))
         }
+        if (!on) return lookupOnly()
         // The lookup is also the open report (openId); the engine says whether
         // it recorded it, and anything short of that is retried via /v1/open.
         return try {
@@ -617,6 +622,8 @@ class StraitClient(private val config: StraitConfig) {
             }
             e
         } catch (_: Exception) {
+            // Switched off while the resolve was out (F4): route the way an opted-out tap does.
+            if (!isEnabled()) return lookupOnly()
             safely { enqueue(openReport(id, LinkRoute.APP_LINK, appState, raw, false, firstLaunch, t0, reason = "network")) }
             emit(LinkEvent(id, "direct", LinkRoute.APP_LINK, appState, false, reason = "network",
                 rawUrl = raw, ms = config.clock() - t0, at = t0))
