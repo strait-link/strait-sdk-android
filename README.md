@@ -237,7 +237,7 @@ by default the SDK reads `smallestScreenWidthDp` from the system configuration
 `deviceClass = deviceClassForSize(resources.configuration.smallestScreenWidthDp.toDouble())`
 (or `null` to send nothing) to `StraitConfig`. Older engines ignore it.
 
-Every recorded open and install (`/v1/resolve`, `/v1/open`, `/v1/referrer`, `/v1/match`, saved retries too) also
+Every recorded open and install (`/v1/resolve`, `/v1/open`, `/v1/referrer`, `/v1/match`; a saved retry keeps the versions of the build that made it) also
 sends `sdkVersion` (this SDK's version) and, when you pass `appVersion`, your app's `versionName` (trimmed, at most
 64 characters, left out unless plain ASCII), so support can see which build a report came from. Events and
 `/v1/lookup` send neither; while `setEnabled(false)` nothing is sent.

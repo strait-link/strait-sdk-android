@@ -516,7 +516,6 @@ class StraitClient(private val config: StraitConfig) {
             call("POST", "/v1/event", body).first
         } else {
             if (deviceClass != null) body.put("deviceClass", deviceClass) // B14: added at send time, never queued
-            putVersions(body) // also at send time, so reports queued by an older SDK carry them too
             call("POST", "/v1/open", body).first
         }
         synchronized(backoffLock) {
@@ -570,7 +569,9 @@ class StraitClient(private val config: StraitConfig) {
         if (clickId != null) r.put("clickId", clickId)
         if (linkId != null) r.put("linkId", linkId)
         if (reason != null) r.put("reason", reason)
-        return r
+        // Stamped when the open happens and saved with it: a report sent after an app update keeps the
+        // build it came from. Reports saved by an older SDK have neither and are sent as they are.
+        return putVersions(r)
     }
 
     private fun resolveDirect(raw: String, appState: String, firstLaunch: Boolean = false): LinkEvent {

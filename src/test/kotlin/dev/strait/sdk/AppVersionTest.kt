@@ -77,6 +77,28 @@ class AppVersionTest {
     }
 
     @Test
+    fun reportSavedBeforeAnUpdateKeepsTheVersionItWasMadeWith() {
+        val s = MemoryStore().apply { data["strait.deferredChecked"] = "1" }
+        val offline = Engine { throw java.io.IOException("offline") }
+        client(offline, s, appVersion = { "4.2.1" }).handleUrl("acme://product/42")
+        // The app updates; the next launch is online and sends the saved report.
+        val e = Engine { HttpResponse(202, "{}") }
+        client(e, s, appVersion = { "4.3.0" }).flushOpenReports()
+        assertVersions(e.bodies("/v1/open").single(), "4.2.1")
+    }
+
+    @Test
+    fun reportSavedByAnOlderSdkIsSentWithoutVersions() {
+        val s = MemoryStore().apply {
+            data["strait.deferredChecked"] = "1"
+            data["strait.pendingOpens"] = """[{"openId":"o_1","kind":"direct","route":"app_link","appState":"closed","platform":"android","matched":true,"firstLaunch":false,"at":$t}]"""
+        }
+        val e = Engine { HttpResponse(202, "{}") }
+        client(e, s).flushOpenReports()
+        assertNoVersions(e.bodies("/v1/open").single())
+    }
+
+    @Test
     fun referrerCarriesBothVersions() {
         val e = Engine { HttpResponse(200, """{"matched":true,"longUrl":"https://shop.example/p/1","linkId":"lnk_1"}""") }
         client(e, MemoryStore(), referrer = "strait_link=lnk_1&strait_click=$click").start(null)
