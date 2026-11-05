@@ -14,12 +14,12 @@
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data android:scheme="straitsample" />
             </intent-filter>
-            <!-- Verified App Links on your Strait host (add this app's package + SHA-256 in Dashboard -> Settings). -->
+            <!-- Verified App Links on your STRAIT_ENDPOINT host (add this app's package + SHA-256 in Dashboard -> Apps). -->
             <intent-filter android:autoVerify="true">
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
-                <data android:scheme="https" android:host="strait-dev.strait.link" />
+                <data android:scheme="https" android:host="${straitHost}" />
             </intent-filter>
         </activity>
     </application>
