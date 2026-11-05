@@ -47,7 +47,20 @@ data class LinkEvent(
      * `referral.converted` webhook). Referrals are a preview (contract B21).
      */
     val referralCode: String? = null,
+    /**
+     * Deferred links only: how the engine matched and how sure it is, e.g.
+     * `MatchInfo("fingerprint", "probable")`. Null when not matched or the
+     * engine doesn't send it (engine ADR 0081).
+     */
+    val match: MatchInfo? = null,
 )
+
+/**
+ * How the engine matched a deferred link and how sure it is (engine ADR 0081).
+ * [method]: install_referrer · clipboard · fingerprint · test.
+ * [confidence]: exact · high · probable (install_referrer and clipboard are exact).
+ */
+data class MatchInfo(val method: String, val confidence: String)
 
 /**
  * Fired the moment a link arrives, before it's resolved: show an
@@ -589,7 +602,7 @@ class StraitClient(private val config: StraitConfig) {
                         return emit(LinkEvent(id, "deferred", LinkRoute.INSTALL_REFERRER, AppStateAtLink.CLOSED, true,
                             url = dest.url, path = dest.path, params = dest.params,
                             linkId = str(json, "linkId") ?: linkId, ms = config.clock() - t0, at = t0,
-                            referralCode = replyReferralCode(json.opt("referralCode"))))
+                            referralCode = replyReferralCode(json.opt("referralCode")), match = replyMatch(json.opt("match"))))
                     }
                 }
             }
@@ -602,7 +615,8 @@ class StraitClient(private val config: StraitConfig) {
             emit(LinkEvent(id, "deferred", LinkRoute.FINGERPRINT, AppStateAtLink.CLOSED, matched,
                 reason = if (matched) null else "no_match", url = dest.url, path = dest.path, params = dest.params,
                 linkId = str(json, "linkId"), ms = config.clock() - t0, at = t0,
-                referralCode = if (matched) replyReferralCode(json.opt("referralCode")) else null))
+                referralCode = if (matched) replyReferralCode(json.opt("referralCode")) else null,
+                match = if (matched) replyMatch(json.opt("match")) else null))
         } catch (_: Exception) {
             emit(LinkEvent(id, "deferred", LinkRoute.FINGERPRINT, AppStateAtLink.CLOSED, false, reason = "network",
                 ms = config.clock() - t0, at = t0))

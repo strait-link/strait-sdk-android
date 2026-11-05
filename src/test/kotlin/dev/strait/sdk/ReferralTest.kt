@@ -70,4 +70,32 @@ class ReferralTest {
             assertNull(firstEvent(mapOf("/v1/match" to reply)).referralCode, reply.toString())
         }
     }
+
+    // Engine ADR 0081: a matched deferred reply says how it matched and how sure it is.
+    private fun matchInfo(method: String, confidence: String) = JSONObject().put("method", method).put("confidence", confidence)
+
+    @Test
+    fun playReferrerCarriesTheMatch() {
+        val e = firstEvent(mapOf("/v1/referrer" to matched().put("matchMethod", "install_referrer").put("match", matchInfo("install_referrer", "exact"))), "strait_link=lnk_42")
+        assertEquals(MatchInfo("install_referrer", "exact"), e.match)
+    }
+
+    @Test
+    fun fingerprintMatchCarriesTheMatch() {
+        val e = firstEvent(mapOf("/v1/match" to matched().put("matchMethod", "exact_ext").put("match", matchInfo("fingerprint", "probable"))))
+        assertEquals(MatchInfo("fingerprint", "probable"), e.match)
+    }
+
+    @Test
+    fun noMatchFieldMalformedOrNoMatchGivesNull() {
+        for (reply in listOf(
+            matched(),
+            matched().put("match", JSONObject.NULL),
+            matched().put("match", "exact"),
+            matched().put("match", JSONObject().put("method", 1)),
+            JSONObject().put("matched", false).put("match", matchInfo("fingerprint", "probable")),
+        )) {
+            assertNull(firstEvent(mapOf("/v1/match" to reply)).match, reply.toString())
+        }
+    }
 }

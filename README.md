@@ -220,9 +220,11 @@ class MainActivity : ComponentActivity() {
 ```
 
 `LinkEvent` fields: `id, kind (direct|deferred), route (app_link|custom_scheme|install_referrer|fingerprint),
-appState (closed|background|foreground), matched, reason, rawUrl, url, path, params, linkId, ms, at, referralCode`.
+appState (closed|background|foreground), matched, reason, rawUrl, url, path, params, linkId, ms, at, referralCode, match`.
 `referralCode` (deferred links only) is the referral code the tap carried, when the engine sends one; referrals are
 a preview and not switched on yet (contract B21). Grant rewards from your server via the `referral.converted` webhook.
+`match` (matched deferred links only) says why the install was attributed, e.g. `MatchInfo("fingerprint", "probable")`
+(`exact` for `install_referrer`); null when not matched.
 `onLink` replays past events to late subscribers. Both `onLink` and `onLinkStart` return an unsubscribe function.
 
 ### What Strait records automatically (no extra code)
