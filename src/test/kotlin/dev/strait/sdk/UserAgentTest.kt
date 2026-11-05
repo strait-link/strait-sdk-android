@@ -1,7 +1,6 @@
 package dev.strait.sdk
 
 import com.sun.net.httpserver.HttpServer
-import java.io.File
 import java.net.InetSocketAddress
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -28,12 +27,6 @@ class UserAgentTest {
         } finally {
             server.stop(0)
         }
-        assertEquals("strait-android/$SDK_VERSION", ua)
-    }
-
-    @Test
-    fun sdkVersionMatchesTheBuildVersion() {
-        val gradle = File("build.gradle.kts").readText()
-        assertEquals(Regex("""(?m)^version = "([^"]+)"""").find(gradle)!!.groupValues[1], SDK_VERSION)
+        assertEquals("strait-android", ua)
     }
 }

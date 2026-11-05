@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-- Privacy: the default `UrlConnectionTransport` sends `User-Agent: strait-android/<version>` instead of
+- Privacy: the default `UrlConnectionTransport` sends `User-Agent: strait-android` instead of
   Android's default (`Dalvik/2.1.0 (Linux; U; Android 14; <model> Build/...)`), so no phone model reaches
   request logs. Matching never used it on Android.
 - Fix: switching the SDK off while a short link's `/v1/resolve` is still out no longer answers

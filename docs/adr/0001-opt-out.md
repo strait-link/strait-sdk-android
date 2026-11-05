@@ -50,8 +50,9 @@ the one engine call allowed while off; it bypasses the opt-out gate by name, not
 ## Update 5 Nov 2026: follow-ups F1 + F4 (`ops/run-1105/sdk-privacy-followups.md`)
 - **F1, User-Agent.** `UrlConnectionTransport` sent Android's default UA, `Dalvik/2.1.0 (Linux; U;
   Android 14; <model> Build/...)`, on every call, including the opt-out `/v1/lookup`, so the phone model
-  reached Cloudflare and Render request logs. It now sends `strait-android/<version>` and nothing about
-  the device. Checked first: the engine reads the UA for matching only as the iOS major version
+  reached Cloudflare and Render request logs. It now sends `strait-android` and nothing about
+  the device, and no SDK version either: the engine's test-mode phone key hashes the UA, so a version
+  would unpin a registered test phone (`test_devices`) at every SDK upgrade (review finding). Checked first: the engine reads the UA for matching only as the iOS major version
   (`match-signals.ts`, `iosMajorFromUA`), never on Android, and the platform comes from the body. One side
   effect, accepted: test mode's per-phone key (engine ADR 0071, UA + screen + density + language + time
   zone) can no longer tell apart two Android test phones with identical screen, density, language and time

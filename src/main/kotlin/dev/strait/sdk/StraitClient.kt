@@ -100,9 +100,6 @@ fun interface HttpTransport {
     fun request(url: String, method: String, jsonBody: String?): HttpResponse
 }
 
-/** This SDK's version (kept equal to build.gradle.kts by UserAgentTest). */
-internal const val SDK_VERSION = "0.9.0"
-
 /** Default transport: java.net.HttpURLConnection (available on Android + JVM). */
 class UrlConnectionTransport(
     private val connectTimeoutMs: Int = 10_000,
@@ -116,7 +113,9 @@ class UrlConnectionTransport(
             conn.readTimeout = readTimeoutMs
             conn.setRequestProperty("Accept", "application/json")
             // Names only the SDK: Android's default UA carries the phone model (Dalvik/... <model> Build/...).
-            conn.setRequestProperty("User-Agent", "strait-android/$SDK_VERSION")
+            // No version: the engine's test-mode phone key hashes the UA (ADR 0071), so a version would
+            // unpin a registered test phone at every SDK upgrade.
+            conn.setRequestProperty("User-Agent", "strait-android")
             if (jsonBody != null) {
                 conn.doOutput = true
                 conn.setRequestProperty("Content-Type", "application/json")
