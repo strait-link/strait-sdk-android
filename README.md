@@ -27,7 +27,7 @@ A tap opens the exact screen, and every link open and install is recorded in you
   <a href="#docs-and-support">Talk to the Strait team</a>
 </p>
 
-`strait-sdk-android` (Kotlin) · v0.8.4
+`strait-sdk-android` (Kotlin) · v0.9.0
 
 Deep linking for native Android, part of [Strait](https://straitlink.in). It covers direct links
 (verified App Links and custom-scheme hand-offs), deferred links (Play Install
@@ -84,7 +84,7 @@ dependencyResolutionManagement {
 }
 
 // app/build.gradle.kts
-dependencies { implementation("com.github.strait-link:strait-sdk-android:v0.8.4") }
+dependencies { implementation("com.github.strait-link:strait-sdk-android:v0.9.0") }
 ```
 <!-- /brand:install -->
 

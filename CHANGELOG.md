@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.9.0 (unreleased, launch week)
+## 0.9.0 (5 Nov 2026)
 
 - Fix: reinstalls from a link are no longer lost. Android Auto Backup puts the "deferred check done"
   flag back after a reinstall, so the reinstall skipped its deferred link and was never counted
