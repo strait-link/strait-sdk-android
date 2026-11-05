@@ -37,6 +37,9 @@ class App : Application() {
                     timezone = TimeZone.getDefault().id,
                 )
             },
+            // Reinstalls from a link: Android Auto Backup brings the "deferred check done" flag back,
+            // the install time tells the SDK it is a new install (contract B6a).
+            installTime = { packageManager.getPackageInfo(packageName, 0).firstInstallTime },
             // Network calls block, so run them off the main thread.
             executor = Executors.newSingleThreadExecutor(),
         ))

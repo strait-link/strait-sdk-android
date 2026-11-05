@@ -46,7 +46,7 @@ class MainActivity : Activity() {
 
         purchase.setOnClickListener {
             io.execute {
-                val ok = strait.trackEvent("purchase", value = 4.99, currency = "USD")
+                val ok = strait.trackEvent("purchase", value = 4.99, currency = "USD", eventId = "order_${System.currentTimeMillis()}")
                 runOnUiThread { show("event purchase sent: $ok") }
             }
         }

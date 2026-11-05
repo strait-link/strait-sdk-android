@@ -45,6 +45,18 @@ class ConformanceTest {
     }
 
     @Test
+    fun firstLaunchStateVectors() {
+        for (c in objects("firstLaunchState")) {
+            val flag = if (c.isNull("flag")) null else c.getString("flag")
+            val stored = if (c.isNull("stored")) null else c.getString("stored")
+            val installTime = if (c.isNull("installTime")) null else c.getDouble("installTime")
+            val e = c.getJSONObject("expected")
+            val want = FirstLaunchState(e.getBoolean("firstLaunch"), e.getBoolean("clearFlag"), if (e.isNull("storeInstallTime")) null else e.getString("storeInstallTime"))
+            assertEquals(want, firstLaunchState(flag, stored, installTime), c.getString("name"))
+        }
+    }
+
+    @Test
     fun replyClickIdVectors() {
         for (c in objects("replyClickId")) {
             val reply = if (c.isNull("reply")) null else c.get("reply")
@@ -149,6 +161,14 @@ class ConformanceTest {
         for (c in objects("retry")) {
             val status = if (c.isNull("status")) null else c.getInt("status")
             assertEquals(c.getBoolean("expected"), shouldRetryReport(status), "status=$status")
+        }
+    }
+
+    @Test
+    fun retryDelayVectors() {
+        for (c in objects("retryDelay")) {
+            val retryAfter = if (c.isNull("retryAfter")) null else c.getString("retryAfter")
+            assertEquals(c.getLong("expected"), retryDelayMs(c.getInt("failures"), retryAfter, c.getDouble("random")), c.getString("name"))
         }
     }
 

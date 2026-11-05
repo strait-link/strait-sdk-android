@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.9.0 (5 Nov 2026)
+
+- Fix: reinstalls from a link are no longer lost. Android Auto Backup puts the "deferred check done"
+  flag back after a reinstall, so the reinstall skipped its deferred link and was never counted
+  (reproduced on the emulator with `bmgr`). New `StraitConfig.installTime` (pass
+  `packageManager.getPackageInfo(packageName, 0).firstInstallTime`): the SDK stores it as
+  `strait.installTime` and runs the check again when it changed; an app update, or an app updated
+  from an older SDK, is never a new install (contract B6a, shared-spec ADR 0003). README shows how to
+  keep the Strait prefs out of backups too.
+- New: `trackEvent(…, eventId = order.id)`; the engine stores each eventId once. Left out, the SDK
+  makes one, so a retry never counts twice. Events that can't be sent (offline, 429, 5xx) are kept in
+  the open-report queue and sent later; `pendingOpenReports()` counts them (contract B13a, ADR 0004).
+- Fix: when the server is busy (429 or 5xx) the saved queue no longer sends its whole backlog on every
+  foreground. A flush stops at the first 429/5xx and the queue waits 15–30 s, doubling each time in a
+  row up to 1 hour, and at least the server's `Retry-After` (contract B14 backoff, C1, shared-spec ADR
+  0005). New opens and events are still sent once when they happen.
+- Conformance vectors v11 (`firstLaunchState`, `retryDelay`).
+
 ## 0.8.4
 
 - `doctor()` now gives exactly the findings of the other Strait SDKs (React Native 0.9.3, Swift 0.9.4,

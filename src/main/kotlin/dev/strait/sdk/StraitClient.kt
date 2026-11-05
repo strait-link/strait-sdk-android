@@ -74,7 +74,8 @@ class MemoryStore : KeyValueStore {
     override fun set(key: String, value: String) { data[key] = value }
 }
 
-data class HttpResponse(val status: Int, val body: String?) {
+/** [retryAfter]: the response's `Retry-After` header, if any (the open/event queue's backoff floor, C1). */
+data class HttpResponse @JvmOverloads constructor(val status: Int, val body: String?, val retryAfter: String? = null) {
     val ok: Boolean get() = status in 200..299
 }
 
@@ -106,14 +107,15 @@ class UrlConnectionTransport(
             val status = conn.responseCode
             val stream = if (status in 200..299) conn.inputStream else conn.errorStream
             val body = stream?.bufferedReader(Charsets.UTF_8)?.use { it.readText() }
-            return HttpResponse(status, body)
+            return HttpResponse(status, body, conn.getHeaderField("Retry-After"))
         } finally {
             conn.disconnect()
         }
     }
 }
 
-class StraitConfig(
+/** Java callers (the Capacitor plugin) keep compiling as parameters are added at the end ([JvmOverloads]). */
+class StraitConfig @JvmOverloads constructor(
     /** Workspace publishable key (st_pub_live_...), Dashboard -> Get started. Never the secret key. */
     val publishableKey: String,
     /** Your Strait link host, e.g. https://go.yourbrand.com */
@@ -142,11 +144,19 @@ class StraitConfig(
      * configuration; null (not sent) when it can't be read.
      */
     val deviceClass: String? = systemDeviceClass(),
+    /**
+     * The app's install time in epoch ms (contract B6a), called off the main thread at start:
+     * `{ packageManager.getPackageInfo(packageName, 0).firstInstallTime }`. Android Auto Backup
+     * restores the "deferred check done" flag after a reinstall; with this the SDK sees the new
+     * install and still runs the check. Default null: the flag alone (the old behaviour).
+     */
+    val installTime: () -> Long? = { null },
 )
 
 private const val DEFERRED_FLAG = "strait.deferredChecked"
 private const val QUEUE_KEY = "strait.pendingOpens"
 private const val TAP_KEY = "strait.lastTap"
+private const val INSTALL_TIME_KEY = "strait.installTime"
 
 /**
  * Strait link client (contract B1-B15). Never throws from link handling.
@@ -164,6 +174,8 @@ class StraitClient(private val config: StraitConfig) {
     private val tapLock = Any()
     private val flushing = AtomicBoolean(false)
     @Volatile private var stopped = false
+    /** The jitter source for the queue backoff (C1); tests pin it. */
+    internal var random: () -> Double = Math::random
 
     /**
      * Handle the launch link (Activity.onCreate intent data, or null), then run
@@ -178,7 +190,13 @@ class StraitClient(private val config: StraitConfig) {
             safely {
                 // Unreadable storage counts as "already checked": never risk a stale
                 // deferred jump on every launch. Write failures are ignored (never throw).
-                val firstLaunch = runCatching { config.storage.get(DEFERRED_FLAG) }.getOrElse { "1" } != "1"
+                val flag = runCatching { config.storage.get(DEFERRED_FLAG) }.getOrElse { "1" }
+                // B6a: the install time stored with the flag tells restored storage of another install apart.
+                val stored = runCatching { config.storage.get(INSTALL_TIME_KEY) }.getOrNull()
+                val s = firstLaunchState(flag, stored, runCatching { config.installTime() }.getOrNull()?.toDouble())
+                if (s.clearFlag) runCatching { config.storage.set(DEFERRED_FLAG, "") }
+                s.storeInstallTime?.let { runCatching { config.storage.set(INSTALL_TIME_KEY, it) } }
+                val firstLaunch = s.firstLaunch
                 if (initial != null) {
                     // Opened by a link on first launch = the user's intent right now: no
                     // deferred check, but this open still counts as the install's first.
@@ -276,22 +294,33 @@ class StraitClient(private val config: StraitConfig) {
     /**
      * Conversion / revenue event (blocking). True when accepted. Carries the tap
      * id of the last attributed link open (<=7 days, contract B15) unless you
-     * pass [clickId] yourself.
+     * pass [clickId] yourself. Pass your order id as [eventId]: the engine stores
+     * each eventId once (else the SDK makes one). False = not accepted now; when the
+     * network or the server was the reason, the event is kept and sent later with
+     * the open reports (contract B13a).
      */
+    @JvmOverloads
     fun trackEvent(
         name: String, value: Double? = null, currency: String? = null, linkId: String? = null, clickId: String? = null,
+        eventId: String? = null,
     ): Boolean = try {
-        val body = JSONObject()
-            .put("publishableKey", config.publishableKey)
+        val at = config.clock()
+        // B13a: built once (tap id chosen now), with an eventId so a retry is stored once.
+        val event = JSONObject()
+            .put("type", "event").put("at", at)
             .put("event", name)
             .put("platform", config.platform)
-        if (value != null) body.put("value", value)
-        if (currency != null) body.put("currency", currency)
-        if (linkId != null) body.put("linkId", linkId)
+            .put("eventId", eventId?.takeIf { it.isNotEmpty() } ?: newEventId(at))
+        if (value != null) event.put("value", value)
+        if (currency != null) event.put("currency", currency)
+        if (linkId != null) event.put("linkId", linkId)
         val stored = synchronized(tapLock) { runCatching { config.storage.get(TAP_KEY) }.getOrNull() }
-        if (staleTap(stored, config.clock())) dropStaleTap() // B18: delete, don't just ignore
-        eventClickId(stored, config.clock(), clickId)?.let { body.put("clickId", it) }
-        call("POST", "/v1/event", body).first.ok
+        if (staleTap(stored, at)) dropStaleTap() // B18: delete, don't just ignore
+        eventClickId(stored, at, clickId)?.let { event.put("clickId", it) }
+        val status = sendReport(event)
+        // The network works: send anything saved earlier, on the executor (never block the caller on the backlog).
+        if (shouldRetryReport(status)) enqueue(event) else config.executor.execute { flush() }
+        status != null && status in 200..299
     } catch (_: Exception) {
         false
     }
@@ -409,11 +438,27 @@ class StraitClient(private val config: StraitConfig) {
         writeQueue(pruneOpenQueue(readQueue() + report, config.clock()) { it.optLong("at") })
     }
 
-    /** POST /v1/open; the HTTP status, or null when there was no answer. */
+    // C1: after a 429/5xx the queue waits retryDelayMs (exponential, jittered, at least the
+    // Retry-After) before it sends again; any other answer ends the wait. No answer adds none.
+    private val backoffLock = Any()
+    private var failures = 0
+    private var holdUntil = 0L
+
+    /** POST /v1/open (or /v1/event for a saved event, B13a); the HTTP status, or null when there was no answer. */
     private fun sendReport(report: JSONObject): Int? = try {
         val body = JSONObject(report.toString()).put("publishableKey", config.publishableKey)
-        if (deviceClass != null) body.put("deviceClass", deviceClass) // B14: added at send time, never queued
-        call("POST", "/v1/open", body).first.status
+        val res = if (body.optString("type") == "event") {
+            body.remove("type"); body.remove("at")
+            call("POST", "/v1/event", body).first
+        } else {
+            if (deviceClass != null) body.put("deviceClass", deviceClass) // B14: added at send time, never queued
+            call("POST", "/v1/open", body).first
+        }
+        synchronized(backoffLock) {
+            if (shouldRetryReport(res.status)) holdUntil = config.clock() + retryDelayMs(++failures, res.retryAfter, random())
+            else { failures = 0; holdUntil = 0 }
+        }
+        res.status
     } catch (_: Exception) {
         null
     }
@@ -427,18 +472,18 @@ class StraitClient(private val config: StraitConfig) {
     private fun flush() {
         if (!flushing.compareAndSet(false, true)) return
         try {
+            if (config.clock() < synchronized(backoffLock) { holdUntil }) return // C1: the server asked us to wait
             synchronized(queueLock) {
                 val queue = pruneOpenQueue(readQueue(), config.clock()) { it.optLong("at") }
                 val keep = ArrayList<JSONObject>()
-                var offline = false
+                var stop = false
                 for (rep in queue) {
-                    // Once one gets no answer at all, keep the rest for later.
-                    if (offline) {
+                    // Once one gets no answer, a 429 or a 5xx, keep the rest for later.
+                    if (stop) {
                         keep += rep; continue
                     }
-                    val status = sendReport(rep)
-                    offline = status == null
-                    if (shouldRetryReport(status)) keep += rep
+                    stop = shouldRetryReport(sendReport(rep))
+                    if (stop) keep += rep
                 }
                 writeQueue(keep)
             }

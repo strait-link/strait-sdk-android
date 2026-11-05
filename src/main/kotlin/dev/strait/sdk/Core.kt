@@ -336,12 +336,66 @@ internal fun replyReferralCode(reply: Any?): String? =
 /** Whether a failed report should be kept for retry: no answer (null), 429 or 5xx. */
 internal fun shouldRetryReport(status: Int?): Boolean = status == null || status == 429 || status >= 500
 
+/** C1 backoff: the first hold after a 429/5xx is 15-30 s; each one in a row doubles it, up to RETRY_MAX_MS. */
+internal const val RETRY_BASE_MS = 30_000L
+/** C1 backoff: never hold the queue longer than 1 hour (Retry-After included). */
+internal const val RETRY_MAX_MS = 3_600_000L
+private val RETRY_AFTER_SECONDS = Regex("[0-9]{1,9}")
+
+/**
+ * How long to hold the open/event queue after the [failures]-th 429/5xx answer in a row (contract B14, C1).
+ * Exponential with equal jitter: step = min(RETRY_MAX_MS, RETRY_BASE_MS x 2^(failures-1)), wait
+ * floor(step/2 + random x step/2), so phones that failed together spread out. A Retry-After in whole
+ * seconds (1-9 ASCII digits, spaces trimmed; an HTTP date or anything else is ignored) is a floor. The
+ * result never exceeds RETRY_MAX_MS. [random] is in [0, 1] (the platform's random number).
+ */
+internal fun retryDelayMs(failures: Int, retryAfter: String?, random: Double): Long {
+    val n = failures.coerceIn(1, 17)
+    val half = minOf(RETRY_MAX_MS, RETRY_BASE_MS shl (n - 1)) / 2.0
+    val r = if (random >= 0.0) minOf(random, 1.0) else 0.0 // NaN counts as 0, like the reference
+    val backoff = kotlin.math.floor(half + r * half).toLong()
+    val s = retryAfter?.trim()?.takeIf { RETRY_AFTER_SECONDS.matches(it) }?.toLong()
+    val server = if (s != null) minOf(s, RETRY_MAX_MS / 1000) * 1000 else 0L
+    return minOf(RETRY_MAX_MS, maxOf(backoff, server))
+}
+
 /** A unique id for one link open (the engine de-duplicates retries by it). */
 internal fun newOpenId(now: Long, random: () -> Double = Math::random): String {
     val alphabet = "abcdefghijklmnopqrstuvwxyz0123456789"
     val r = StringBuilder(12)
     repeat(12) { r.append(alphabet[kotlin.math.floor(random() * 36).toInt()]) }
     return "o_${now.toString(36)}_$r"
+}
+
+/**
+ * A unique id for one conversion event when the app gives none (contract B13a): the engine
+ * stores an eventId once, so a retried send is never counted twice. Same shape as [newOpenId].
+ */
+internal fun newEventId(now: Long, random: () -> Double = Math::random): String = "e" + newOpenId(now, random).substring(1)
+
+/** What start() does with the once-per-install flag (contract B6a, shared-spec ADR 0003). */
+data class FirstLaunchState(
+    /** Run the once-per-install deferred check / count this launch as the install's first. */
+    val firstLaunch: Boolean,
+    /** Set `strait.deferredChecked` to "" first: the storage came back from another install. */
+    val clearFlag: Boolean,
+    /** Then write this to `strait.installTime` (null = leave it). */
+    val storeInstallTime: String?,
+)
+
+/**
+ * B6a: storage restored from a backup of another install (Android Auto Backup) brings back
+ * `strait.deferredChecked`. The app's install time, stored next to it, tells: a different
+ * stored time = a new install, so the check runs again. No stored time (an app updated from an
+ * older SDK) = adopt it, never a new install. Unknown install time (null, < 1, not finite) = B6 alone.
+ */
+internal fun firstLaunchState(flag: String?, storedInstallTime: String?, installTime: Double?): FirstLaunchState {
+    val t = installTime?.takeIf { it.isFinite() && it >= 1 }?.let { kotlin.math.floor(it).toLong().toString() }
+    val stored = storedInstallTime?.takeIf { it.isNotEmpty() }
+    if (flag != "1") return FirstLaunchState(true, false, if (t != null && t != stored) t else null)
+    if (t == null || t == stored) return FirstLaunchState(false, false, null)
+    if (stored == null) return FirstLaunchState(false, false, t)
+    return FirstLaunchState(true, true, t)
 }
 
 /** A link arriving this soon after the app came back to the front came "from background". */
