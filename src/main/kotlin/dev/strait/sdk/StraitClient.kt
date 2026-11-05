@@ -168,6 +168,12 @@ class StraitConfig @JvmOverloads constructor(
      * install and still runs the check. Default null: the flag alone (the old behaviour).
      */
     val installTime: () -> Long? = { null },
+    /**
+     * The app's version, sent as `appVersion` with every recorded open and install so support can see which
+     * build a report came from: `{ packageManager.getPackageInfo(packageName, 0).versionName }`. Read once,
+     * off the main thread; trimmed and cut to 64 characters, and left out unless printable ASCII. Default null: not sent.
+     */
+    val appVersion: () -> String? = { null },
 )
 
 private const val DEFERRED_FLAG = "strait.deferredChecked"
@@ -197,6 +203,8 @@ class StraitClient(private val config: StraitConfig) {
     private val enabledLock = Any()
     /** The first-launch check was skipped because the SDK was off: setEnabled(true) runs it. */
     private val deferredDue = AtomicBoolean(false)
+    /** [StraitConfig.appVersion], read once (on the executor, at the first recorded open). */
+    private val appVersion: String? by lazy { wireVersion(runCatching { config.appVersion() }.getOrNull()) }
     /** The jitter source for the queue backoff (C1); tests pin it. */
     internal var random: () -> Double = Math::random
 
@@ -561,7 +569,9 @@ class StraitClient(private val config: StraitConfig) {
         if (clickId != null) r.put("clickId", clickId)
         if (linkId != null) r.put("linkId", linkId)
         if (reason != null) r.put("reason", reason)
-        return r
+        // Stamped when the open happens and saved with it: a report sent after an app update keeps the
+        // build it came from. Reports saved by an older SDK have neither and are sent as they are.
+        return putVersions(r)
     }
 
     private fun resolveDirect(raw: String, appState: String, firstLaunch: Boolean = false): LinkEvent {
@@ -608,7 +618,7 @@ class StraitClient(private val config: StraitConfig) {
                 .put("firstLaunch", firstLaunch)
                 .put("at", t0)
             if (deviceClass != null) body.put("deviceClass", deviceClass)
-            val json = call("POST", "/v1/resolve", body).second
+            val json = call("POST", "/v1/resolve", putVersions(body)).second
             val matched = json.opt("matched") == true
             val reason = if (matched) null else (str(json, "reason") ?: str(json, "error"))
             val linkId = str(json, "linkId")
@@ -640,7 +650,7 @@ class StraitClient(private val config: StraitConfig) {
         val id = newOpenId(t0)
         if (!isEnabled()) return LinkEvent(id, "deferred", LinkRoute.FINGERPRINT, AppStateAtLink.CLOSED, false, reason = "disabled", ms = 0, at = t0)
         announce(LinkStart(id, "deferred", AppStateAtLink.CLOSED, null, t0))
-        fun tag(body: JSONObject): JSONObject = if (record) body.put("openId", id).put("at", t0) else body.put("record", false)
+        fun tag(body: JSONObject): JSONObject = if (record) putVersions(body.put("openId", id).put("at", t0)) else body.put("record", false)
         // No answer, 429 or 5xx = try again next launch (reported as 'network').
         fun answered(path: String, body: JSONObject): JSONObject {
             val (res, json) = call("POST", path, body)
@@ -698,6 +708,12 @@ class StraitClient(private val config: StraitConfig) {
         if (url == null) return Dest()
         val p = splitUrl(url) ?: return Dest(url)
         return Dest(url, p.path, p.params)
+    }
+
+    /** td2-23: on every request that records an open or install (never /v1/lookup or /v1/event). */
+    private fun putVersions(body: JSONObject): JSONObject {
+        appVersion?.let { body.put("appVersion", it) }
+        return body.put("sdkVersion", SDK_VERSION)
     }
 
     private fun putDevice(body: JSONObject, d: DeviceFields) {

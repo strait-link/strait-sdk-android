@@ -381,6 +381,16 @@ internal fun newOpenId(now: Long, random: () -> Double = Math::random): String {
  */
 internal fun newEventId(now: Long, random: () -> Double = Math::random): String = "e" + newOpenId(now, random).substring(1)
 
+/** This SDK's version, sent as `sdkVersion` (td2-23). Equals `version` in build.gradle.kts (a test pins it). */
+internal const val SDK_VERSION = "0.9.0"
+
+/**
+ * A version string as it goes on the wire (`appVersion`, `sdkVersion`): trimmed, cut to 64 characters,
+ * and only if what's left is 1-64 printable ASCII characters (the engine's rule); anything else is null (not sent).
+ */
+internal fun wireVersion(v: String?): String? =
+    v?.trim()?.take(64)?.takeIf { s -> s.isNotEmpty() && s.all { it in ' '..'~' } }
+
 /** What start() does with the once-per-install flag (contract B6a, shared-spec ADR 0003). */
 data class FirstLaunchState(
     /** Run the once-per-install deferred check / count this launch as the install's first. */
