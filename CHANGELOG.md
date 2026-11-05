@@ -7,7 +7,7 @@
   tap are deleted. Kept across launches (`strait.enabled` in `storage`); `setEnabled(true)` resumes and runs
   a first-launch check that was skipped while off (on the executor). `isEnabled()` reads it. Default on.
   Links that carry their own destination still reach `onLink`. A Strait short link still routes: while
-  off the SDK asks the engine's `/v1/lookup` (key + host + path only), which records no tap, open or tap
+  off the SDK asks the engine's `/v1/lookup` (key + host + path, no query), which records no tap, open or tap
   id, and queues no report; if that lookup fails (offline, or an engine without it) the link comes back
   `reason = "disabled"`. ADR 0001; engine ADR 0083.
 - New: a matched deferred `LinkEvent` has `match: MatchInfo(method, confidence)`, how the engine matched

@@ -576,11 +576,11 @@ class StraitClient(private val config: StraitConfig) {
             if (on) safely { report(openReport(id, c.route, appState, c.url!!, true, firstLaunch, t0, clickId = c.clickId)) }
             return e
         }
-        // Opted out: ask only where the link goes (/v1/lookup records nothing). Key + host + path only;
+        // Opted out: ask only where the link goes (/v1/lookup records nothing). Key + host + path, no query;
         // no open report, no tap kept, no retry. An engine without it (404) or no network: "disabled".
         if (!on) {
             val json = try {
-                val body = JSONObject().put("publishableKey", config.publishableKey).put("url", reportUrl(raw))
+                val body = JSONObject().put("publishableKey", config.publishableKey).put("url", reportUrl(raw).substringBefore('?'))
                 call("POST", "/v1/lookup", body, lookupOnly = true).let { (res, j) -> if (res.ok) j else JSONObject() }
             } catch (_: Exception) {
                 JSONObject()

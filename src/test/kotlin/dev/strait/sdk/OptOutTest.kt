@@ -66,16 +66,28 @@ class OptOutTest {
         c.handleUrl("https://acme.strait.link/sale?utm_source=sms&secret=1")
         c.flushOpenReports()
         assertEquals(listOf("/v1/lookup"), e.calls)
-        // Only the key and host + path (+ utm_source) leave the device: no openId, platform, device or app state.
+        // Only the key and host + path leave the device: no query, openId, platform, device or app state.
         val body = org.json.JSONObject(e.bodies[0]!!)
         assertEquals(setOf("publishableKey", "url"), body.keySet())
-        assertEquals("https://acme.strait.link/sale?utm_source=sms", body.getString("url"))
+        assertEquals("https://acme.strait.link/sale", body.getString("url"))
         val l = links.single()
         assertTrue(l.matched)
         assertEquals("/p/42", l.path)
         assertEquals(mapOf("color" to "red"), l.params)
         assertEquals(0, c.pendingOpenReports())
         assertEquals("", s.get("strait.lastTap") ?: "")
+    }
+
+    @Test
+    fun disabledLookupMissKeepsTheEngineReason() {
+        val c = client(Engine { HttpResponse(200, """{"matched":false,"reason":"expired"}""") }, MemoryStore())
+        val links = mutableListOf<LinkEvent>()
+        c.onLink { links += it }
+        c.setEnabled(false)
+        c.start(null)
+        c.handleUrl("https://acme.strait.link/old")
+        assertTrue(links.single().let { !it.matched && it.reason == "expired" })
+        assertEquals(0, c.pendingOpenReports())
     }
 
     @Test
