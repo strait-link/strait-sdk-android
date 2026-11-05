@@ -14,11 +14,13 @@ import kotlin.test.assertTrue
 class OptOutTest {
     private val t = 1_800_000_000_000L
 
-    private class Engine : HttpTransport {
+    private class Engine(val reply: (String) -> HttpResponse = { HttpResponse(202, """{"matched":false}""") }) : HttpTransport {
         val calls = mutableListOf<String>()
+        val bodies = mutableListOf<String?>()
         override fun request(url: String, method: String, jsonBody: String?): HttpResponse {
             calls += URI(url).path
-            return HttpResponse(202, """{"matched":false}""")
+            bodies += jsonBody
+            return reply(URI(url).path)
         }
     }
 
@@ -40,15 +42,66 @@ class OptOutTest {
         c.setEnabled(false)
         c.start(null)
         c.handleUrl("acme://product/42")
-        c.handleUrl("https://acme.strait.link/sale") // a short link needs a lookup, which counts the tap
         assertFalse(c.trackEvent("purchase", value = 5.0, eventId = "ord_1"))
         c.flushOpenReports()
         assertEquals("disabled", c.checkDeferred().reason)
         assertEquals(emptyList(), e.calls)
         assertTrue(links.any { it.matched && it.rawUrl == "acme://product/42" })
-        assertTrue(links.any { !it.matched && it.reason == "disabled" && it.rawUrl == "https://acme.strait.link/sale" })
         assertEquals(0, c.pendingOpenReports()) // reports saved before the opt-out are deleted
         assertEquals("", s.get("strait.deferredChecked") ?: "") // the check is still due
+    }
+
+    @Test
+    fun disabledShortLinkStillRoutesThroughLookupWhichRecordsNothing() {
+        val e = Engine { path ->
+            if (path == "/v1/lookup") HttpResponse(200, """{"matched":true,"longUrl":"https://shop.example/p/42?color=red","linkId":"lnk_42","slug":"sale"}""")
+            else HttpResponse(202, "{}")
+        }
+        val s = MemoryStore()
+        val c = client(e, s)
+        val links = mutableListOf<LinkEvent>()
+        c.onLink { links += it }
+        c.setEnabled(false)
+        c.start(null)
+        c.handleUrl("https://acme.strait.link/sale?utm_source=sms&secret=1")
+        c.flushOpenReports()
+        assertEquals(listOf("/v1/lookup"), e.calls)
+        // Only the key and host + path leave the device: no query, openId, platform, device or app state.
+        val body = org.json.JSONObject(e.bodies[0]!!)
+        assertEquals(setOf("publishableKey", "url"), body.keySet())
+        assertEquals("https://acme.strait.link/sale", body.getString("url"))
+        val l = links.single()
+        assertTrue(l.matched)
+        assertEquals("/p/42", l.path)
+        assertEquals(mapOf("color" to "red"), l.params)
+        assertEquals(0, c.pendingOpenReports())
+        assertEquals("", s.get("strait.lastTap") ?: "")
+    }
+
+    @Test
+    fun disabledLookupMissKeepsTheEngineReason() {
+        val c = client(Engine { HttpResponse(200, """{"matched":false,"reason":"expired"}""") }, MemoryStore())
+        val links = mutableListOf<LinkEvent>()
+        c.onLink { links += it }
+        c.setEnabled(false)
+        c.start(null)
+        c.handleUrl("https://acme.strait.link/old")
+        assertTrue(links.single().let { !it.matched && it.reason == "expired" })
+        assertEquals(0, c.pendingOpenReports())
+    }
+
+    @Test
+    fun disabledLookupFailureIsDisabledAndQueuesNothing() {
+        for (reply in listOf<(String) -> HttpResponse>({ HttpResponse(404, """{"error":"not found"}""") }, { throw java.io.IOException("offline") })) {
+            val c = client(Engine(reply), MemoryStore())
+            val links = mutableListOf<LinkEvent>()
+            c.onLink { links += it }
+            c.setEnabled(false)
+            c.start(null)
+            c.handleUrl("https://acme.strait.link/sale")
+            assertTrue(links.single().let { !it.matched && it.reason == "disabled" })
+            assertEquals(0, c.pendingOpenReports())
+        }
     }
 
     @Test
