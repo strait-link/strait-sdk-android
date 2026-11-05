@@ -333,6 +333,14 @@ private val REFERRAL_CODE = Regex("^[A-Za-z0-9_-]{1,64}$")
 internal fun replyReferralCode(reply: Any?): String? =
     if (reply is String && REFERRAL_CODE.matches(reply)) reply else null
 
+/** The `match` of a matched deferred reply, as sent, when it has a string method and confidence; else null (engine ADR 0081). */
+internal fun replyMatch(reply: Any?): MatchInfo? {
+    val m = reply as? org.json.JSONObject ?: return null
+    val method = m.opt("method") as? String ?: return null
+    val confidence = m.opt("confidence") as? String ?: return null
+    return MatchInfo(method, confidence)
+}
+
 /** Whether a failed report should be kept for retry: no answer (null), 429 or 5xx. */
 internal fun shouldRetryReport(status: Int?): Boolean = status == null || status == 429 || status >= 500
 

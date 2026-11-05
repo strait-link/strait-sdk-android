@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- New: a matched deferred `LinkEvent` has `match: MatchInfo(method, confidence)`, how the engine matched
+  (`install_referrer`, `fingerprint`, `test`, ...) and how sure it is (`exact`, `high`, `probable`); null when
+  not matched or the engine doesn't send it (engine ADR 0081). New `data class MatchInfo`.
+
 ## 0.9.0 (5 Nov 2026)
 
 - Fix: reinstalls from a link are no longer lost. Android Auto Backup puts the "deferred check done"
