@@ -120,9 +120,11 @@ fun doctorFindings(
     return out
 }
 
-/** A Strait link domain answers 404 {"error":"not configured"} until Apps & stores has this platform's app. */
-private fun notConfigured(status: Int?, body: String?): Boolean =
-    status == 404 && try { JSONObject(body ?: "").optString("error") == "not configured" } catch (_: Exception) { false }
+/**
+ * A Strait link domain answers 404 {"error":"not configured"} until Apps & stores has this platform's app.
+ * Compared byte for byte (what the engine's well-known route sends), so every SDK agrees on any other body.
+ */
+private fun notConfigured(status: Int?, body: String?): Boolean = status == 404 && body == "{\"error\":\"not configured\"}"
 
 /** assetlinks.json: package -> normalised fingerprints, in file order; null if it isn't a JSON array. */
 private fun androidApps(body: String): Map<String, Set<String>>? {
