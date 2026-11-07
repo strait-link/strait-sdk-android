@@ -89,8 +89,21 @@ class DoctorTest {
     @Test fun noApp() {
         val fs = run(f = DoctorFile(200, "[]"))
         assertEquals(listOf("key.ok", "app.none"), ids(fs))
-        assertEquals(DoctorFinding("app.none", "error", "No Android app is set up for acme.strait.link", "Add your app in Dashboard → Apps & stores."), fs[1])
+        assertEquals(NO_ANDROID_APP, fs[1])
     }
+
+    // User-lens audit item 10: the link domain answers 404 {"error":"not configured"} until Apps & stores
+    // has the Android app. That is app.none (fill in Apps & stores), not host.file_missing.
+    @Test fun notConfiguredLinkDomainIsAppNone() {
+        val fs = run(f = DoctorFile(404, "{\"error\":\"not configured\"}"))
+        assertEquals(listOf("key.ok", "app.none"), ids(fs))
+        assertEquals(NO_ANDROID_APP, fs[1])
+    }
+
+    private val NO_ANDROID_APP = DoctorFinding(
+        "app.none", "error", "No Android app is set up for acme.strait.link",
+        "Fill in Dashboard → Apps & stores (package name and SHA-256 fingerprint), wait a minute, then check again. Already done? Make sure acme.strait.link is your link domain from Dashboard → Get started.",
+    )
 
     @Test fun appMissingListsWhatIsThere() {
         val fs = run(appId = "com.other.app", certs = listOf(fp))

@@ -77,15 +77,21 @@ fun doctorFindings(
     }
     val ios = platform == "ios"
     // listed app id (Android package / iOS appID) -> its fingerprints (Android only)
-    val apps = (if (file.status == 200) file.body?.let { if (ios) iosApps(it) else androidApps(it) } else null) ?: run {
-        err(
-            "host.file_missing", "$host doesn't serve ${doctorFilePath(platform).substringAfterLast('/')}",
-            "Use your Strait link domain as endpoint (Dashboard → Get started); Strait serves this file there.",
-        )
-        return out
-    }
+    // A 404 "not configured" from a Strait link domain is no app yet (app.none), not a missing file.
+    val apps = (if (file.status == 200) file.body?.let { if (ios) iosApps(it) else androidApps(it) } else null)
+        ?: if (notConfigured(file.status, file.body)) emptyMap() else run {
+            err(
+                "host.file_missing", "$host doesn't serve ${doctorFilePath(platform).substringAfterLast('/')}",
+                "Use your Strait link domain as endpoint (Dashboard → Get started); Strait serves this file there.",
+            )
+            return out
+        }
     if (apps.isEmpty()) {
-        err("app.none", "No ${if (ios) "iOS" else "Android"} app is set up for $host", "Add your app in Dashboard → Apps & stores.")
+        err(
+            "app.none", "No ${if (ios) "iOS" else "Android"} app is set up for $host",
+            "Fill in Dashboard → Apps & stores (${if (ios) "Team ID and bundle ID" else "package name and SHA-256 fingerprint"}), wait a minute, then check again. " +
+                "Already done? Make sure $host is your link domain from Dashboard → Get started.",
+        )
         return out
     }
     val listed = apps.keys.joinToString(", ")
@@ -113,6 +119,10 @@ fun doctorFindings(
     }
     return out
 }
+
+/** A Strait link domain answers 404 {"error":"not configured"} until Apps & stores has this platform's app. */
+private fun notConfigured(status: Int?, body: String?): Boolean =
+    status == 404 && try { JSONObject(body ?: "").optString("error") == "not configured" } catch (_: Exception) { false }
 
 /** assetlinks.json: package -> normalised fingerprints, in file order; null if it isn't a JSON array. */
 private fun androidApps(body: String): Map<String, Set<String>>? {
