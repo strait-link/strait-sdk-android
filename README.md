@@ -44,6 +44,23 @@ shared vectors. It is a 1:1 port of the React Native reference
 Dependencies: Kotlin stdlib only. `org.json` is `compileOnly` because Android
 already ships it. Outside Android, add `org.json:json` yourself.
 
+## Set it up with one command
+
+The 5-minute path. In your app's folder (Android, Kotlin; Node 18.17 or newer, nothing to install first), with the publishable key from **Dashboard → Get started**:
+
+```sh
+npx @straitlink/cli init --key st_pub_live_… --host <your-handle>.strait.link --dry-run   # show what it will write
+npx @straitlink/cli init --key st_pub_live_… --host <your-handle>.strait.link             # write it
+```
+
+It finds your app from its files, writes `StraitLinks.kt` next to your app code with your key, link address and an `onLink` handler, and prints what's left for you: the Gradle lines, the intent filters and what to fill in under **Dashboard → Apps & stores**. It never edits your existing files. Then check that your link domain lists your app:
+
+```sh
+npx @straitlink/cli doctor --host <your-handle>.strait.link --android <your.package>
+```
+
+Rather do it by hand? Follow the quick start below.
+
 ## Quick start (60 seconds)
 
 **1. Install.** Add JitPack and `implementation("com.github.strait-link:strait-sdk-android:<version>")`, as in [Install](#install).
