@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.10.0 (7 Nov 2026)
 
 - New: open and install reports carry the app's version and the SDK's version (`appVersion`, `sdkVersion`), so
   when someone says "links stopped working", support can see which app build sent each report. Pass
