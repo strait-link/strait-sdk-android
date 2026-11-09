@@ -40,7 +40,15 @@ class UserIdTest {
         assertEquals(UserIdField("user_4821", false), userIdField("  user_4821 "))
         assertEquals(UserIdField(sha("priya@example.com"), true), userIdField(" Priya@Example.COM "))
         assertEquals(UserIdField(sha("josé@example.com"), true), userIdField("JOSÉ@Example.com"))
-        assertEquals(UserIdField(sha("919876543210"), true), userIdField("+91 98765-43210"))
+        assertEquals(UserIdField(sha("+919876543210"), true), userIdField("+91 98765-43210"))
+        // v15 (shared-spec ADR 0010): formats v14 sent raw; 00 = +; the hashed form keeps the +.
+        for (p in listOf("(+91) 98765 43210", "0091 98765 43210", "+91\u00A098765\u00A043210", "\u202A+91 98765 43210\u202C",
+                "+91\u201398765\u201343210", "tel:+91-98765-43210", "\uFF0B\uFF19\uFF11 \uFF19\uFF18\uFF17\uFF16\uFF15 \uFF14\uFF13\uFF12\uFF11\uFF10"))
+            assertEquals(UserIdField(sha("+919876543210"), true), userIdField(p), p)
+        assertEquals(UserIdField(sha("9876543210"), true), userIdField("\u096F\u096E\u096D\u096C\u096B\u096A\u0969\u0968\u0967\u0966"))
+        assertEquals(UserIdField(sha("9876543210"), true), userIdField("98765/43210"))
+        assertEquals(UserIdField(sha("priya\uFF20example.com"), true), userIdField("Priya\uFF20Example.com"))
+        for (id in listOf("98765+43210", "+91 98765 43210 ext 12", "TEL:1234567", "98765_43210")) assertEquals(UserIdField(id, false), userIdField(id), id)
         for (bad in listOf(null, "", "   ", "x".repeat(USER_ID_MAX + 1), "a\nb", "a\u007fb")) assertNull(userIdField(bad), "$bad")
         assertEquals(UserIdField("x".repeat(USER_ID_MAX), false), userIdField("x".repeat(USER_ID_MAX)))
     }

@@ -143,22 +143,49 @@ internal data class UserIdField(val userId: String, val userIdHashed: Boolean) {
 private fun isJsSpace(c: Char) = c in '\u0009'..'\u000d' || c == ' ' || c == '\u00a0' || c == '\u1680' || c in '\u2000'..'\u200a' ||
     c == '\u2028' || c == '\u2029' || c == '\u202f' || c == '\u205f' || c == '\u3000' || c == '\ufeff'
 
-private val PHONE = Regex("^\\+?[0-9 ().-]+$")
-
 /**
- * B27 (shared-spec ADR 0009): what `setUserId(id)` sends with later events, or null (nothing sent).
- * Trimmed (JavaScript's whitespace set); empty, longer than [USER_ID_MAX] UTF-16 units or holding a control character = null. An email (any `@`)
- * is sent as the SHA-256 hex of its lower-case form, a phone number (only digits, spaces, `+ ( ) . -`, with 8-15
- * digits) as the SHA-256 hex of its digits: `userIdHashed = true`, the raw value never leaves the device.
+ * B27 (shared-spec ADR 0009, ADR 0010): what `setUserId(id)` sends with later events, or null (nothing sent).
+ * Trimmed (JavaScript's whitespace set); empty, longer than [USER_ID_MAX] UTF-16 units or holding a control character = null. An email (any `@`,
+ * `＠` or `﹫`) is sent as the SHA-256 hex of its lower-case form, a phone number ([phoneNumberForm]) as the SHA-256 hex of its
+ * canonical form: `userIdHashed = true`, the raw value never leaves the device.
  */
 internal fun userIdField(id: String?): UserIdField? {
     val t = id?.trim(::isJsSpace) ?: return null
     if (t.isEmpty() || t.length > USER_ID_MAX) return null
-    if ('@' in t) return UserIdField(sha256Hex(t.lowercase()), true)
-    val digits = t.filter { it in '0'..'9' }
-    if (PHONE.matches(t) && digits.length in 8..15) return UserIdField(sha256Hex(digits), true)
+    if (t.any { it == '@' || it == '\uFF20' || it == '\uFE6B' }) return UserIdField(sha256Hex(t.lowercase()), true)
+    phoneNumberForm(t)?.let { return UserIdField(sha256Hex(it), true) }
     if (t.any { it <= '\u001f' || it == '\u007f' }) return null
     return UserIdField(t, false)
+}
+
+/** The zero of each run of ten decimal digits B27 reads: ASCII, Arabic-Indic, Eastern Arabic-Indic, Devanagari, Bengali, Gurmukhi, Gujarati, Oriya, Tamil, Telugu, Kannada, Malayalam, full-width. */
+private val DIGIT_ZEROS = intArrayOf(0x30, 0x660, 0x6f0, 0x966, 0x9e6, 0xa66, 0xae6, 0xb66, 0xbe6, 0xc66, 0xce6, 0xd66, 0xff10)
+
+/** Characters a written phone number may hold between its digits (B27 v15): spaces, dashes, dots, brackets, slashes, invisible marks. */
+private fun isPhoneSeparator(c: Int) = c == 0x20 || c == 0x28 || c == 0x29 || c == 0x2d || c == 0x2e || c == 0x2f || c == 0xa0 ||
+    c in 0x2000..0x2015 || c in 0x202a..0x202f || c == 0x205f || c == 0x2060 || c in 0x2066..0x2069 ||
+    c == 0x2212 || c == 0x3000 || c == 0xfeff || c == 0xff08 || c == 0xff09 || c in 0xff0d..0xff0f
+
+/**
+ * B27 v15 (shared-spec ADR 0010): the canonical form of a phone number, or null when [t] is not one. After an optional
+ * `tel:` (any ASCII case), [t] may hold only decimal digits (any [DIGIT_ZEROS] run), separators and one `+` / `＋` before
+ * the first digit, with 8-15 digits (8-17 when they start with the international `00` and there is no `+`). Form: `+` and
+ * the digits when written with `+`; `+` and the digits after `00`; else the digits (ASCII).
+ */
+internal fun phoneNumberForm(t: String): String? {
+    val s = if (t.length >= 4 && t.substring(0, 4).all { it < '\u0080' } && t.substring(0, 4).lowercase() == "tel:") t.substring(4) else t
+    var plus = false
+    val digits = StringBuilder()
+    for (ch in s) {
+        val c = ch.code
+        val zero = DIGIT_ZEROS.firstOrNull { c in it..it + 9 }
+        if (zero != null) digits.append(c - zero)
+        else if ((c == 0x2b || c == 0xff0b) && !plus && digits.isEmpty()) plus = true
+        else if (!isPhoneSeparator(c)) return null
+    }
+    val zeroZero = !plus && digits.startsWith("00")
+    if (digits.length < 8 || digits.length > (if (zeroZero) 17 else 15)) return null
+    return if (plus) "+$digits" else if (zeroZero) "+${digits.substring(2)}" else digits.toString()
 }
 
 /** SHA-256 of the UTF-8 bytes of [s], lower-case hex. */
@@ -427,7 +454,7 @@ internal fun newOpenId(now: Long, random: () -> Double = Math::random): String {
 internal fun newEventId(now: Long, random: () -> Double = Math::random): String = "e" + newOpenId(now, random).substring(1)
 
 /** This SDK's version, sent as `sdkVersion` (td2-23). Equals `version` in build.gradle.kts (a test pins it). */
-internal const val SDK_VERSION = "0.10.5"
+internal const val SDK_VERSION = "0.10.6"
 
 /**
  * A version string as it goes on the wire (`appVersion`, `sdkVersion`): trimmed, cut to 64 characters,
