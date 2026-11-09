@@ -33,10 +33,11 @@ class AppVersionTest {
         s: KeyValueStore = MemoryStore().apply { data["strait.deferredChecked"] = "1" },
         referrer: String? = null,
         appVersion: () -> String? = { "4.2.1" },
+        sdkVersion: String? = null,
     ) = StraitClient(StraitConfig(
         publishableKey = "st_pub_test_x", endpoint = "https://acme.strait.link", storage = s,
         installReferrer = { referrer }, device = { DeviceFields(411, 2.625, "en", "Asia/Kolkata") },
-        transport = e, clock = { t }, appVersion = appVersion,
+        transport = e, clock = { t }, appVersion = appVersion, sdkVersion = sdkVersion,
     ))
 
     private fun assertVersions(body: JSONObject, app: String? = "4.2.1") {
@@ -165,6 +166,35 @@ class AppVersionTest {
         assertNull(wireVersion("\t"))
         assertNull(wireVersion("1.0\u0000"))
         assertNull(wireVersion("版本1"))
+    }
+
+    @Test
+    fun wrapperSdkVersionReplacesTheCoreVersionOnEveryRecordingCall() {
+        // B25: a wrapper over this SDK (the Capacitor plugin) names itself, so support can tell it from a native app.
+        val e = Engine { path ->
+            if (path == "/v1/referrer") HttpResponse(200, """{"matched":true,"longUrl":"https://shop.example/p/1","linkId":"lnk_1"}""")
+            else HttpResponse(202, """{"matched":false,"recorded":true}""")
+        }
+        val c = client(e, MemoryStore(), referrer = "strait_link=lnk_1&strait_click=$click", sdkVersion = "capacitor/0.4.3")
+        c.start(null)
+        c.handleUrl("https://acme.strait.link/sale")
+        c.handleUrl("acme://product/42")
+        for (path in listOf("/v1/referrer", "/v1/resolve", "/v1/open")) {
+            assertEquals("capacitor/0.4.3", e.bodies(path).single().optString("sdkVersion"), path)
+            assertEquals("4.2.1", e.bodies(path).single().optString("appVersion"), path)
+        }
+    }
+
+    @Test
+    fun badWrapperSdkVersionFallsBackToTheCoreVersion() {
+        for (bad in listOf<String?>(null, "", "   ", "cap/é")) {
+            val e = Engine { HttpResponse(202, "{}") }
+            client(e, sdkVersion = bad).handleUrl("acme://a/1")
+            assertVersions(e.bodies("/v1/open").single())
+        }
+        val e = Engine { HttpResponse(202, "{}") }
+        client(e, sdkVersion = " capacitor/" + "9".repeat(80)).handleUrl("acme://a/1")
+        assertEquals(("capacitor/" + "9".repeat(80)).take(64), e.bodies("/v1/open").single().optString("sdkVersion"))
     }
 
     @Test
