@@ -19,5 +19,7 @@ class JavaCallersTest {
         StraitClient c = new StraitClient(withInstallTime);
         assertTrue(new StraitClient(old).trackEvent("purchase", 1.0, "USD", null, null));
         assertTrue(c.trackEvent("purchase", 1.0, "USD", null, null, "ord_1"));
+        c.setUserId("user_4821");
+        c.setUserId(null);
     }
 }
