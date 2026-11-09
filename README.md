@@ -127,6 +127,7 @@ dependencies { implementation("com.github.strait-link:strait-sdk-android:v0.10.4
 | B14 every open reported once (`newOpenId` = event id), retry queue `strait.pendingOpens` (`pruneOpenQueue`, `shouldRetryReport`), `pendingOpenReports()` / `flushOpenReports()`, backoff after a 429/5xx (`retryDelayMs`, C1); `deviceClass` on resolve / open / store sheet (`deviceClassForSize`, sw600dp) | ✓ | `StraitClient`, `Core.kt`, vectors v11 |
 | B15 conversion events carry the tap id (`strait.lastTap`, `eventClickId`, 7-day `ATTRIBUTION_WINDOW_MS`, explicit `clickId` override) | ✓ | `StraitClient`, `Core.kt`, vectors |
 | B16 every attributed open supplies the tap id (`/v1/resolve`, `/v1/match`, `/v1/referrer` reply `clickId` → `strait.lastTap`, `replyClickId`) | ✓ | `StraitClient`, `Core.kt`, vectors v4 |
+| B26 the install carries the raw Play referrer (`installReferrer`, 1..4096 chars) on `/v1/referrer` and the `/v1/match` fallback; never on `checkDeferred()` or while off | ✓ | `StraitClient`, `installReferrerField`, vectors v12 |
 | B17 `screenWidth` is the portrait (shorter-side) width: `portraitScreenWidth(w, h)` | ✓ | `Core.kt`, README `device`, vectors v5 |
 | B18 open reports and the retry queue carry no query or fragment (`reportUrl`: host + path, plus the first `utm_source`); an expired `strait.lastTap` is deleted (`staleTap`) | ✓ | `StraitClient`, `Core.kt`, vectors v6 |
 | B22 old Firebase `*.page.link` links: short link → `/v1/resolve` (engine matches the old host + code); long link `/?link=<url>` → the `link` value is the destination, read on the device, no lookup | ✓ | `Core.kt` (`pageLinkLongLink`, `classifyUrl`), vectors v8 |
@@ -258,6 +259,8 @@ Every recorded open and install (`/v1/resolve`, `/v1/open`, `/v1/referrer`, `/v1
 sends `sdkVersion` (this SDK's version) and, when you pass `appVersion`, your app's `versionName` (trimmed, at most
 64 characters, left out unless plain ASCII), so support can see which build a report came from. Events and
 `/v1/lookup` send neither; while `setEnabled(false)` nothing is sent.
+
+On Android's first launch the SDK also sends the Play install referrer string as read (`installReferrer`, contract B26) with the call that records the install, so the install keeps its campaign. Strait keeps only `utm_source`, `utm_medium`, `utm_campaign`, `utm_term` and `utm_content`; `gclid` and any other parameter in it are dropped on arrival, never stored or logged. Not sent on the debug re-check, on iPhone, or while switched off.
 
 
 | How the app opened | Reported via | Joined to |
