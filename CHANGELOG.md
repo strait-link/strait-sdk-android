@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.10.5 (10 Nov 2026)
+
+- `setUserId(id)` (contract B27, shared-spec ADR 0009): call it after your sign-in and `setUserId(null)` on sign-out.
+  Later `trackEvent` calls carry the id to your `app.event` webhook (`userId`, `userIdHashed`), so you can join Strait
+  events to your own users and see which campaigns bring paying ones. Emails and phone numbers are hashed on the phone
+  (SHA-256, `java.security.MessageDigest`) and never leave it raw. Memory only, never logged, cleared and not sent while
+  switched off; an event saved offline keeps its id on the device until sent (up to 7 days, deleted on opt-out).
+  Trimmed with JavaScript's whitespace set, like every Strait SDK. Conformance vectors v14 (`userId` group).
+
 ## 0.10.4 (9 Nov 2026)
 
 - The install now keeps its campaign. On the first launch the SDK sends the Google Play install referrer it already

@@ -130,6 +130,41 @@ internal const val INSTALL_REFERRER_MAX = 4096
 internal fun installReferrerField(referrer: String?): String? =
     referrer?.takeIf { it.isNotEmpty() && it.length <= INSTALL_REFERRER_MAX }
 
+/** The longest user id the SDK sends (after trimming); a longer one is not sent (engine ADR 0110). */
+internal const val USER_ID_MAX = 128
+
+/** What [StraitClient.setUserId] sends with later events: `userId` + `userIdHashed` (B27). */
+internal data class UserIdField(val userId: String, val userIdHashed: Boolean) {
+    /** Never prints the id (B27: never logged). */
+    override fun toString() = "UserIdField(userIdHashed=$userIdHashed)"
+}
+
+/** JavaScript's `String.prototype.trim` whitespace set (B27 parity): unlike Kotlin's trim, strips U+FEFF and keeps U+001C-U+001F. */
+private fun isJsSpace(c: Char) = c in '\u0009'..'\u000d' || c == ' ' || c == '\u00a0' || c == '\u1680' || c in '\u2000'..'\u200a' ||
+    c == '\u2028' || c == '\u2029' || c == '\u202f' || c == '\u205f' || c == '\u3000' || c == '\ufeff'
+
+private val PHONE = Regex("^\\+?[0-9 ().-]+$")
+
+/**
+ * B27 (shared-spec ADR 0009): what `setUserId(id)` sends with later events, or null (nothing sent).
+ * Trimmed (JavaScript's whitespace set); empty, longer than [USER_ID_MAX] UTF-16 units or holding a control character = null. An email (any `@`)
+ * is sent as the SHA-256 hex of its lower-case form, a phone number (only digits, spaces, `+ ( ) . -`, with 8-15
+ * digits) as the SHA-256 hex of its digits: `userIdHashed = true`, the raw value never leaves the device.
+ */
+internal fun userIdField(id: String?): UserIdField? {
+    val t = id?.trim(::isJsSpace) ?: return null
+    if (t.isEmpty() || t.length > USER_ID_MAX) return null
+    if ('@' in t) return UserIdField(sha256Hex(t.lowercase()), true)
+    val digits = t.filter { it in '0'..'9' }
+    if (PHONE.matches(t) && digits.length in 8..15) return UserIdField(sha256Hex(digits), true)
+    if (t.any { it <= '\u001f' || it == '\u007f' }) return null
+    return UserIdField(t, false)
+}
+
+/** SHA-256 of the UTF-8 bytes of [s], lower-case hex. */
+internal fun sha256Hex(s: String): String =
+    java.security.MessageDigest.getInstance("SHA-256").digest(s.toByteArray(Charsets.UTF_8)).joinToString("") { "%02x".format(it) }
+
 /** The strait_link id inside a Play Install Referrer string, or null. */
 internal fun parseStraitLink(referrer: String?): String? = referrerParam(referrer, "strait_link")
 
@@ -392,7 +427,7 @@ internal fun newOpenId(now: Long, random: () -> Double = Math::random): String {
 internal fun newEventId(now: Long, random: () -> Double = Math::random): String = "e" + newOpenId(now, random).substring(1)
 
 /** This SDK's version, sent as `sdkVersion` (td2-23). Equals `version` in build.gradle.kts (a test pins it). */
-internal const val SDK_VERSION = "0.10.4"
+internal const val SDK_VERSION = "0.10.5"
 
 /**
  * A version string as it goes on the wire (`appVersion`, `sdkVersion`): trimmed, cut to 64 characters,

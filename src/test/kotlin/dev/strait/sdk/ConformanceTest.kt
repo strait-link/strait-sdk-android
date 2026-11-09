@@ -32,7 +32,17 @@ class ConformanceTest {
         assertEquals(c.getLong("OPEN_QUEUE_MAX_AGE_MS"), OPEN_QUEUE_MAX_AGE_MS)
         assertEquals(c.getLong("ATTRIBUTION_WINDOW_MS"), ATTRIBUTION_WINDOW_MS)
         assertEquals(c.getInt("INSTALL_REFERRER_MAX"), INSTALL_REFERRER_MAX)
-        assertEquals(6, c.length(), "unexpected constants: $c")
+        assertEquals(c.getInt("USER_ID_MAX"), USER_ID_MAX)
+        assertEquals(7, c.length(), "unexpected constants: $c")
+    }
+
+    @Test
+    fun userIdVectors() {
+        for (c in objects("userId")) {
+            val input = if (c.isNull("input")) null else c.getString("input")
+            val want = if (c.isNull("expected")) null else c.getJSONObject("expected").let { UserIdField(it.getString("userId"), it.getBoolean("userIdHashed")) }
+            assertEquals(want, userIdField(input), "userId: ${c.getString("name")}")
+        }
     }
 
     @Test

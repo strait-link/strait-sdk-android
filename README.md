@@ -27,7 +27,7 @@ A tap opens the exact screen, and every link open and install is recorded in you
   <a href="#docs-and-support">Talk to the Strait team</a>
 </p>
 
-`strait-sdk-android` (Kotlin) · v0.10.4
+`strait-sdk-android` (Kotlin) · v0.10.5
 
 Deep linking for native Android, part of [Strait](https://straitlink.in). It covers direct links
 (verified App Links and custom-scheme hand-offs), deferred links (Play Install
@@ -101,7 +101,7 @@ dependencyResolutionManagement {
 }
 
 // app/build.gradle.kts
-dependencies { implementation("com.github.strait-link:strait-sdk-android:v0.10.4") }
+dependencies { implementation("com.github.strait-link:strait-sdk-android:v0.10.5") }
 ```
 <!-- /brand:install -->
 
@@ -131,10 +131,11 @@ dependencies { implementation("com.github.strait-link:strait-sdk-android:v0.10.4
 | B17 `screenWidth` is the portrait (shorter-side) width: `portraitScreenWidth(w, h)` | ✓ | `Core.kt`, README `device`, vectors v5 |
 | B18 open reports and the retry queue carry no query or fragment (`reportUrl`: host + path, plus the first `utm_source`); an expired `strait.lastTap` is deleted (`staleTap`) | ✓ | `StraitClient`, `Core.kt`, vectors v6 |
 | B22 old Firebase `*.page.link` links: short link → `/v1/resolve` (engine matches the old host + code); long link `/?link=<url>` → the `link` value is the destination, read on the device, no lookup | ✓ | `Core.kt` (`pageLinkLongLink`, `classifyUrl`), vectors v8 |
+| B27 `setUserId(id)`: in memory only, `userId` + `userIdHashed` on later `/v1/event` bodies (kept by a queued event), never on any other call; emails / phone numbers sent as SHA-256 hex; nothing while off | ✓ | `StraitClient.setUserId`, `userIdField`, vectors v14 |
 | B23 `doctor()` setup check: key, endpoint, the link host's `assetlinks.json` lists the package and this build's signing certificate (`doctorFindings`, ids and wording from shared-spec ADR 0002); one GET, never throws, prints each finding | ✓ | `Doctor.kt`, `StraitClient.doctor` |
 
 Vectors: `src/test/resources/test-vectors.json` (signature) and
-`conformance-vectors.json` v8 (pure helpers). Both are byte-identical copies from
+`conformance-vectors.json` v14 (pure helpers). Both are byte-identical copies from
 `shared-spec`, so don't edit them here. `doctor-vectors.json` (B23, 43 cases) is the same file in the
 Flutter SDK, generated from the React Native SDK's `doctorFindings`.
 
@@ -333,6 +334,27 @@ stores each one once, so a retry or a second report of the same order never coun
 out, the SDK makes one. An event that can't be sent (offline, server busy) is kept with the saved
 open reports and sent later, for up to 7 days; `trackEvent` then returns `false` (contract B13a).
 Refunds are not supported yet. Revenue you must trust (billing, payouts) belongs on your server with the secret key: the app's publishable key is public, so anyone who can guess an order id could send it first.
+
+#### Your user on events (`setUserId`)
+
+```kotlin
+strait.setUserId(user.id)   // after your sign-in, and when the app starts with a user already signed in
+strait.setUserId(null)      // on sign-out
+```
+
+Later `trackEvent` calls carry this id to your `app.event` webhook (`userId`, `userIdHashed`), so you can
+join Strait's tap, link and campaign to your own users and see which campaigns bring paying ones
+(contract B27). It is kept in memory only, never logged, ignored while `setEnabled(false)` (which also
+clears it), and not sent with app opens or installs. An event saved while offline keeps the id it was
+tracked with on the device until it is sent (up to 7 days; deleted on opt-out).
+
+Emails and phone numbers never leave the phone: an id with `@` is sent as the SHA-256 hex of its
+lower-cased form, one made only of digits, spaces and `+ ( ) . -` with 8-15 digits as the SHA-256 hex of
+its digits, with `userIdHashed: true`. To join, hash your own value the same way
+(`sha256("priya@example.com")`, `sha256("919876543210")`). A plain numeric id of 8-15 digits is hashed
+too; prefix it (`u_12345678`) to keep it readable. Ids longer than 128 characters or holding control
+characters are not sent (and clear the previous one). Anyone with your publishable key can send any
+`userId`, so treat it as a claim, like revenue sent from the app.
 
 HTTP defaults to `UrlConnectionTransport` (`HttpURLConnection`). To use OkHttp,
 implement `HttpTransport`: throw on network failure and return every HTTP

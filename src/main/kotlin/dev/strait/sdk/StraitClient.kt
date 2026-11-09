@@ -207,6 +207,8 @@ class StraitClient(private val config: StraitConfig) {
     /** Opt-out switch, read from storage once; unreadable storage = the default (on). */
     @Volatile private var enabled: Boolean? = null
     private val enabledLock = Any()
+    /** B27: the [setUserId] value, in memory only (already hashed when it was an email or phone). Guarded by enabledLock. */
+    @Volatile private var userId: UserIdField? = null
     /** The first-launch check was skipped because the SDK was off: setEnabled(true) runs it. */
     private val deferredDue = AtomicBoolean(false)
     /** [StraitConfig.appVersion], read once (on the executor, at the first recorded open). */
@@ -342,6 +344,7 @@ class StraitClient(private val config: StraitConfig) {
         name: String, value: Double? = null, currency: String? = null, linkId: String? = null, clickId: String? = null,
         eventId: String? = null,
     ): Boolean = if (!isEnabled()) false else try {
+        val uid = userId // B27: read when the app calls, so a setUserId during this call never changes this event
         val at = config.clock()
         // B13a: built once (tap id chosen now), with an eventId so a retry is stored once.
         val event = JSONObject()
@@ -355,6 +358,7 @@ class StraitClient(private val config: StraitConfig) {
         val stored = synchronized(tapLock) { runCatching { config.storage.get(TAP_KEY) }.getOrNull() }
         if (staleTap(stored, at)) dropStaleTap() // B18: delete, don't just ignore
         eventClickId(stored, at, clickId)?.let { event.put("clickId", it) }
+        uid?.takeIf { isEnabled() }?.let { event.put("userId", it.userId).put("userIdHashed", it.userIdHashed) } // B27: kept if queued
         val status = sendReport(event)
         // The network works: send anything saved earlier, on the executor (never block the caller on the backlog).
         if (shouldRetryReport(status)) enqueue(event) else config.executor.execute { flush() }
@@ -415,7 +419,10 @@ class StraitClient(private val config: StraitConfig) {
      * resumes, and a first-launch check skipped while off runs now (on the executor).
      */
     fun setEnabled(enabled: Boolean) {
-        synchronized(enabledLock) { this.enabled = enabled }
+        synchronized(enabledLock) {
+            this.enabled = enabled
+            if (!enabled) userId = null
+        }
         runCatching { config.storage.set(ENABLED_KEY, if (enabled) "1" else "0") }
         config.executor.execute {
             if (!enabled) {
@@ -428,6 +435,20 @@ class StraitClient(private val config: StraitConfig) {
                 flush()
             }
         }
+    }
+
+    /**
+     * Your own user id, after your sign-in (contract B27): later [trackEvent] calls carry it to your app.event
+     * webhook, so you can join Strait events to your users. An email or phone number is hashed here (SHA-256,
+     * `userIdHashed: true`) and never leaves the device. Kept in memory only: call it again when the app starts
+     * with a user already signed in, and `setUserId(null)` on sign-out. An empty, too long (over 128) or
+     * control-character id is not sent and clears the previous one. Ignored while off ([setEnabled] false also
+     * clears it). Never logged.
+     */
+    fun setUserId(id: String?) {
+        val field = userIdField(id)
+        // isEnabled() reads the stored switch if not read yet, so a stored "off" wins.
+        synchronized(enabledLock) { userId = if (isEnabled()) field else null }
     }
 
     /** The opt-out switch's current value (see [setEnabled]). */

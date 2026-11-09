@@ -14,7 +14,7 @@ Served by JitPack from this public repo.
 maven("https://jitpack.io")
 
 // app/build.gradle.kts
-implementation("com.github.strait-link:strait-sdk-android:v0.10.4")
+implementation("com.github.strait-link:strait-sdk-android:v0.10.5")
 implementation("com.android.installreferrer:installreferrer:2.2")
 implementation("androidx.lifecycle:lifecycle-process:2.8.7")
 ```
@@ -63,6 +63,10 @@ override fun onNewIntent(intent: Intent) { super.onNewIntent(intent); intent.dat
 
 Also feed `ProcessLifecycleOwner` events to `links.onAppState(...)` (docs show the observer). Network calls run on
 the executor, never the main thread.
+
+Your user: `links.setUserId(user.id)` after sign-in (and at launch when already signed in), `links.setUserId(null)` on
+sign-out; later `trackEvent` calls carry it to the `app.event` webhook (emails and phone numbers are hashed on the
+device, contract B27).
 
 ## Verify
 
