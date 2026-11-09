@@ -42,7 +42,7 @@ class AppVersionTest {
 
     private fun assertVersions(body: JSONObject, app: String? = "4.2.1") {
         if (app == null) assertFalse(body.has("appVersion"), body.toString()) else assertEquals(app, body.optString("appVersion"))
-        assertEquals(SDK_VERSION, body.optString("sdkVersion"))
+        assertEquals("android/$SDK_VERSION", body.optString("sdkVersion")) // B25: the SDK names itself (ADR 0007)
     }
 
     private fun assertNoVersions(body: JSONObject) {
