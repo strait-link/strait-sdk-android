@@ -131,11 +131,11 @@ dependencies { implementation("com.github.strait-link:strait-sdk-android:v0.10.5
 | B17 `screenWidth` is the portrait (shorter-side) width: `portraitScreenWidth(w, h)` | ✓ | `Core.kt`, README `device`, vectors v5 |
 | B18 open reports and the retry queue carry no query or fragment (`reportUrl`: host + path, plus the first `utm_source`); an expired `strait.lastTap` is deleted (`staleTap`) | ✓ | `StraitClient`, `Core.kt`, vectors v6 |
 | B22 old Firebase `*.page.link` links: short link → `/v1/resolve` (engine matches the old host + code); long link `/?link=<url>` → the `link` value is the destination, read on the device, no lookup | ✓ | `Core.kt` (`pageLinkLongLink`, `classifyUrl`), vectors v8 |
-| B27 `setUserId(id)`: in memory only, `userId` + `userIdHashed` on later `/v1/event` bodies (kept by a queued event), never on any other call; emails / phone numbers sent as SHA-256 hex; nothing while off | ✓ | `StraitClient.setUserId`, `userIdField`, vectors v13 |
+| B27 `setUserId(id)`: in memory only, `userId` + `userIdHashed` on later `/v1/event` bodies (kept by a queued event), never on any other call; emails / phone numbers sent as SHA-256 hex; nothing while off | ✓ | `StraitClient.setUserId`, `userIdField`, vectors v14 |
 | B23 `doctor()` setup check: key, endpoint, the link host's `assetlinks.json` lists the package and this build's signing certificate (`doctorFindings`, ids and wording from shared-spec ADR 0002); one GET, never throws, prints each finding | ✓ | `Doctor.kt`, `StraitClient.doctor` |
 
 Vectors: `src/test/resources/test-vectors.json` (signature) and
-`conformance-vectors.json` v13 (pure helpers). Both are byte-identical copies from
+`conformance-vectors.json` v14 (pure helpers). Both are byte-identical copies from
 `shared-spec`, so don't edit them here. `doctor-vectors.json` (B23, 43 cases) is the same file in the
 Flutter SDK, generated from the React Native SDK's `doctorFindings`.
 
@@ -346,7 +346,7 @@ Later `trackEvent` calls carry this id to your `app.event` webhook (`userId`, `u
 join Strait's tap, link and campaign to your own users and see which campaigns bring paying ones
 (contract B27). It is kept in memory only, never logged, ignored while `setEnabled(false)` (which also
 clears it), and not sent with app opens or installs. An event saved while offline keeps the id it was
-tracked with.
+tracked with on the device until it is sent (up to 7 days; deleted on opt-out).
 
 Emails and phone numbers never leave the phone: an id with `@` is sent as the SHA-256 hex of its
 lower-cased form, one made only of digits, spaces and `+ ( ) . -` with 8-15 digits as the SHA-256 hex of

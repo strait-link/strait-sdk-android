@@ -344,6 +344,7 @@ class StraitClient(private val config: StraitConfig) {
         name: String, value: Double? = null, currency: String? = null, linkId: String? = null, clickId: String? = null,
         eventId: String? = null,
     ): Boolean = if (!isEnabled()) false else try {
+        val uid = userId // B27: read when the app calls, so a setUserId during this call never changes this event
         val at = config.clock()
         // B13a: built once (tap id chosen now), with an eventId so a retry is stored once.
         val event = JSONObject()
@@ -357,7 +358,7 @@ class StraitClient(private val config: StraitConfig) {
         val stored = synchronized(tapLock) { runCatching { config.storage.get(TAP_KEY) }.getOrNull() }
         if (staleTap(stored, at)) dropStaleTap() // B18: delete, don't just ignore
         eventClickId(stored, at, clickId)?.let { event.put("clickId", it) }
-        userId?.let { event.put("userId", it.userId).put("userIdHashed", it.userIdHashed) } // B27: kept if queued
+        uid?.takeIf { isEnabled() }?.let { event.put("userId", it.userId).put("userIdHashed", it.userIdHashed) } // B27: kept if queued
         val status = sendReport(event)
         // The network works: send anything saved earlier, on the executor (never block the caller on the backlog).
         if (shouldRetryReport(status)) enqueue(event) else config.executor.execute { flush() }

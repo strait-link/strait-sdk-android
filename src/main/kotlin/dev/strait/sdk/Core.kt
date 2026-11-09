@@ -134,18 +134,25 @@ internal fun installReferrerField(referrer: String?): String? =
 internal const val USER_ID_MAX = 128
 
 /** What [StraitClient.setUserId] sends with later events: `userId` + `userIdHashed` (B27). */
-internal data class UserIdField(val userId: String, val userIdHashed: Boolean)
+internal data class UserIdField(val userId: String, val userIdHashed: Boolean) {
+    /** Never prints the id (B27: never logged). */
+    override fun toString() = "UserIdField(userIdHashed=$userIdHashed)"
+}
+
+/** JavaScript's `String.prototype.trim` whitespace set (B27 parity): unlike Kotlin's trim, strips U+FEFF and keeps U+001C-U+001F. */
+private fun isJsSpace(c: Char) = c in '\u0009'..'\u000d' || c == ' ' || c == '\u00a0' || c == '\u1680' || c in '\u2000'..'\u200a' ||
+    c == '\u2028' || c == '\u2029' || c == '\u202f' || c == '\u205f' || c == '\u3000' || c == '\ufeff'
 
 private val PHONE = Regex("^\\+?[0-9 ().-]+$")
 
 /**
  * B27 (shared-spec ADR 0009): what `setUserId(id)` sends with later events, or null (nothing sent).
- * Trimmed; empty, longer than [USER_ID_MAX] UTF-16 units or holding a control character = null. An email (any `@`)
+ * Trimmed (JavaScript's whitespace set); empty, longer than [USER_ID_MAX] UTF-16 units or holding a control character = null. An email (any `@`)
  * is sent as the SHA-256 hex of its lower-case form, a phone number (only digits, spaces, `+ ( ) . -`, with 8-15
  * digits) as the SHA-256 hex of its digits: `userIdHashed = true`, the raw value never leaves the device.
  */
 internal fun userIdField(id: String?): UserIdField? {
-    val t = id?.trim() ?: return null
+    val t = id?.trim(::isJsSpace) ?: return null
     if (t.isEmpty() || t.length > USER_ID_MAX) return null
     if ('@' in t) return UserIdField(sha256Hex(t.lowercase()), true)
     val digits = t.filter { it in '0'..'9' }

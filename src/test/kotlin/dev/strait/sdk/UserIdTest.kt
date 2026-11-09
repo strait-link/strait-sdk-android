@@ -46,6 +46,39 @@ class UserIdTest {
     }
 
     @Test
+    fun trimIsJavaScriptsWhitespaceSet() {
+        // Stripped like String.prototype.trim: BOM, NBSP, line/paragraph separators, ideographic space...
+        for (ws in listOf("\uFEFF", "\u00A0", "\u1680", "\u2000", "\u200A", "\u2028", "\u2029", "\u202F", "\u205F", "\u3000", "\t\n\u000B\u000C\r "))
+            assertEquals(UserIdField("user_4821", false), userIdField("${ws}user_4821$ws"), "trim ${ws.map { it.code }}")
+        // Kept (JS doesn't strip them): U+001C-U+001F are then refused as control characters; U+0085 / U+200B stay in the id.
+        for (c in '\u001C'..'\u001F') assertNull(userIdField("user_4821$c"))
+        assertEquals(UserIdField("user_4821\u0085", false), userIdField("user_4821\u0085"))
+        assertEquals(UserIdField("\u200Buser_4821", false), userIdField("\u200Buser_4821"))
+    }
+
+    @Test
+    fun toStringNeverPrintsTheId() {
+        assertFalse(userIdField("user_4821").toString().contains("4821"))
+        assertFalse(userIdField("Priya@Example.com").toString().contains(sha("priya@example.com")))
+    }
+
+    @Test
+    fun theIdIsReadWhenTrackEventIsCalled() {
+        // A setUserId on another thread while trackEvent runs (here: during its storage read) never changes that event.
+        val e = Engine()
+        lateinit var c: StraitClient
+        val s = object : KeyValueStore {
+            val data = mutableMapOf("strait.deferredChecked" to "1")
+            override fun get(key: String): String? { if (key == "strait.lastTap") c.setUserId("other"); return data[key] }
+            override fun set(key: String, value: String) { data[key] = value }
+        }
+        c = client(e, s)
+        c.setUserId("user_1")
+        c.trackEvent("purchase")
+        assertEquals("user_1", e.events.single().getString("userId"))
+    }
+
+    @Test
     fun eventsAfterSetUserIdCarryItAndNullStopsIt() {
         val e = Engine()
         val c = client(e)
