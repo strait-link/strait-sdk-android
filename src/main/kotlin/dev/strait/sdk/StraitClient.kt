@@ -658,7 +658,11 @@ class StraitClient(private val config: StraitConfig) {
         val id = newOpenId(t0)
         if (!isEnabled()) return LinkEvent(id, "deferred", LinkRoute.FINGERPRINT, AppStateAtLink.CLOSED, false, reason = "disabled", ms = 0, at = t0)
         announce(LinkStart(id, "deferred", AppStateAtLink.CLOSED, null, t0))
-        fun tag(body: JSONObject): JSONObject = if (record) putVersions(body.put("openId", id).put("at", t0)) else body.put("record", false)
+        // B26: the raw Play referrer rides on the calls that record the install, so the install keeps its campaign.
+        var installReferrer: String? = null
+        fun tag(body: JSONObject): JSONObject =
+            if (record) putVersions(body.put("openId", id).put("at", t0)).apply { installReferrer?.let { put("installReferrer", it) } }
+            else body.put("record", false)
         // No answer, 429 or 5xx = try again next launch (reported as 'network').
         fun answered(path: String, body: JSONObject): JSONObject {
             val (res, json) = call("POST", path, body)
@@ -668,6 +672,7 @@ class StraitClient(private val config: StraitConfig) {
         return try {
             if (config.platform == "android") {
                 val referrer = try { config.installReferrer() } catch (_: Exception) { null }
+                installReferrer = installReferrerField(referrer)
                 val linkId = parseStraitLink(referrer)
                 if (linkId != null) {
                     val body = JSONObject()

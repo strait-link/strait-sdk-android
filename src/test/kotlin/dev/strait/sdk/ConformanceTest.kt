@@ -31,7 +31,17 @@ class ConformanceTest {
         assertEquals(c.getInt("OPEN_QUEUE_MAX"), OPEN_QUEUE_MAX)
         assertEquals(c.getLong("OPEN_QUEUE_MAX_AGE_MS"), OPEN_QUEUE_MAX_AGE_MS)
         assertEquals(c.getLong("ATTRIBUTION_WINDOW_MS"), ATTRIBUTION_WINDOW_MS)
-        assertEquals(5, c.length(), "unexpected constants: $c")
+        assertEquals(c.getInt("INSTALL_REFERRER_MAX"), INSTALL_REFERRER_MAX)
+        assertEquals(6, c.length(), "unexpected constants: $c")
+    }
+
+    @Test
+    fun installReferrerVectors() {
+        for ((i, c) in objects("installReferrer").withIndex()) {
+            val input = if (c.isNull("input")) null else c.getString("input")
+            val want = if (c.isNull("expected")) null else c.getString("expected")
+            assertEquals(want, installReferrerField(input), "installReferrer #$i")
+        }
     }
 
     @Test
