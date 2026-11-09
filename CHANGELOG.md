@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.10.3 (9 Nov 2026)
+
+- The SDK now names itself when it reports an app open or install: `sdkVersion` is `android/0.10.3`, not a bare `0.10.3`
+  (contract B25, shared-spec ADR 0007). The same number can belong to the Flutter or React Native SDK, so Strait couldn't
+  tell which SDK an app runs; now the dashboard can say exactly when your app is on an older Android SDK. A wrapper's
+  `StraitConfig.sdkVersion` (Capacitor) still wins. Nothing else changes.
+
 ## 0.10.2 (9 Nov 2026)
 
 - New: `StraitConfig.sdkVersion`, for SDKs built on this one. The Capacitor plugin sets it to `capacitor/<version>`, so its

@@ -211,8 +211,8 @@ class StraitClient(private val config: StraitConfig) {
     private val deferredDue = AtomicBoolean(false)
     /** [StraitConfig.appVersion], read once (on the executor, at the first recorded open). */
     private val appVersion: String? by lazy { wireVersion(runCatching { config.appVersion() }.getOrNull()) }
-    /** `sdkVersion` on the wire: a wrapper's own name/version (B25), else [SDK_VERSION]. */
-    private val sdkVersion: String = wireVersion(config.sdkVersion) ?: SDK_VERSION
+    /** `sdkVersion` on the wire: a wrapper's own name/version, else `android/`[SDK_VERSION] (B25, shared-spec ADR 0007). */
+    private val sdkVersion: String = wireVersion(config.sdkVersion) ?: "android/$SDK_VERSION"
     /** The jitter source for the queue backoff (C1); tests pin it. */
     internal var random: () -> Double = Math::random
 
