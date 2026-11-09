@@ -174,6 +174,12 @@ class StraitConfig @JvmOverloads constructor(
      * off the main thread; trimmed and cut to 64 characters, and left out unless printable ASCII. Default null: not sent.
      */
     val appVersion: () -> String? = { null },
+    /**
+     * For SDKs built on this one (the Capacitor plugin): the name and version sent as `sdkVersion` instead of this
+     * SDK's own, e.g. `"capacitor/0.4.3"` (contract B25), so support can tell a wrapper's app from a native one.
+     * Same wire rule as [appVersion]; null or unusable = this SDK's version. Apps leave it unset.
+     */
+    val sdkVersion: String? = null,
 )
 
 private const val DEFERRED_FLAG = "strait.deferredChecked"
@@ -205,6 +211,8 @@ class StraitClient(private val config: StraitConfig) {
     private val deferredDue = AtomicBoolean(false)
     /** [StraitConfig.appVersion], read once (on the executor, at the first recorded open). */
     private val appVersion: String? by lazy { wireVersion(runCatching { config.appVersion() }.getOrNull()) }
+    /** `sdkVersion` on the wire: a wrapper's own name/version (B25), else [SDK_VERSION]. */
+    private val sdkVersion: String = wireVersion(config.sdkVersion) ?: SDK_VERSION
     /** The jitter source for the queue backoff (C1); tests pin it. */
     internal var random: () -> Double = Math::random
 
@@ -713,7 +721,7 @@ class StraitClient(private val config: StraitConfig) {
     /** td2-23: on every request that records an open or install (never /v1/lookup or /v1/event). */
     private fun putVersions(body: JSONObject): JSONObject {
         appVersion?.let { body.put("appVersion", it) }
-        return body.put("sdkVersion", SDK_VERSION)
+        return body.put("sdkVersion", sdkVersion)
     }
 
     private fun putDevice(body: JSONObject, d: DeviceFields) {
