@@ -120,6 +120,16 @@ internal fun normalizeLinkHosts(endpoint: String, linkHosts: List<String> = empt
     return out
 }
 
+/** The longest Play install referrer the engine reads (engine ADR 0106); a longer one is not sent. */
+internal const val INSTALL_REFERRER_MAX = 4096
+
+/**
+ * B26: the raw Play install referrer as sent in `installReferrer` on the calls that record the install: the string
+ * itself when 1..4096 characters, else null (not sent). The engine keeps only its five utm_* tags.
+ */
+internal fun installReferrerField(referrer: String?): String? =
+    referrer?.takeIf { it.isNotEmpty() && it.length <= INSTALL_REFERRER_MAX }
+
 /** The strait_link id inside a Play Install Referrer string, or null. */
 internal fun parseStraitLink(referrer: String?): String? = referrerParam(referrer, "strait_link")
 
@@ -382,7 +392,7 @@ internal fun newOpenId(now: Long, random: () -> Double = Math::random): String {
 internal fun newEventId(now: Long, random: () -> Double = Math::random): String = "e" + newOpenId(now, random).substring(1)
 
 /** This SDK's version, sent as `sdkVersion` (td2-23). Equals `version` in build.gradle.kts (a test pins it). */
-internal const val SDK_VERSION = "0.10.3"
+internal const val SDK_VERSION = "0.10.4"
 
 /**
  * A version string as it goes on the wire (`appVersion`, `sdkVersion`): trimmed, cut to 64 characters,
