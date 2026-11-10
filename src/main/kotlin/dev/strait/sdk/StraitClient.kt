@@ -187,6 +187,7 @@ private const val QUEUE_KEY = "strait.pendingOpens"
 private const val TAP_KEY = "strait.lastTap"
 private const val INSTALL_TIME_KEY = "strait.installTime"
 private const val ENABLED_KEY = "strait.enabled"
+private const val INSTALL_TAP_KEY = "strait.installTap"
 
 /**
  * Strait link client (contract B1-B15). Never throws from link handling.
@@ -202,6 +203,8 @@ class StraitClient(private val config: StraitConfig) {
     private val tracker = AppStateTracker()
     private val queueLock = Any()
     private val tapLock = Any()
+    /** B28: one "came back" check at a time. */
+    private val returnLock = Any()
     private val flushing = AtomicBoolean(false)
     @Volatile private var stopped = false
     /** Opt-out switch, read from storage once; unreadable storage = the default (on). */
@@ -238,6 +241,8 @@ class StraitClient(private val config: StraitConfig) {
                 if (s.clearFlag) runCatching { config.storage.set(DEFERRED_FLAG, "") }
                 s.storeInstallTime?.let { runCatching { config.storage.set(INSTALL_TIME_KEY, it) } }
                 val firstLaunch = s.firstLaunch
+                // B28: a new install (or a restored backup of another one) starts without an install tap.
+                if (firstLaunch) synchronized(tapLock) { runCatching { config.storage.set(INSTALL_TAP_KEY, "") } }
                 if (initial != null) {
                     // Opened by a link on first launch = the user's intent right now: no
                     // deferred check, but this open still counts as the install's first.
@@ -248,6 +253,7 @@ class StraitClient(private val config: StraitConfig) {
                     else deferredDue.set(true) // opted out: not marked done, runs when switched back on
                 }
             }
+            safely { checkReturn() }
             flush()
         }
     }
@@ -269,7 +275,10 @@ class StraitClient(private val config: StraitConfig) {
     fun onAppState(state: AppLifecycleState, now: Long = config.clock()) {
         if (stopped) return
         tracker.onState(state, now)
-        if (state == AppLifecycleState.ACTIVE) config.executor.execute { flush() }
+        if (state == AppLifecycleState.ACTIVE) config.executor.execute {
+            flush()
+            safely { checkReturn() }
+        }
     }
 
     /** Every link event, including ones that happened before you subscribed. Returns an unsubscribe. */
@@ -430,6 +439,8 @@ class StraitClient(private val config: StraitConfig) {
                 // that began before the switch can't put anything back).
                 safely { synchronized(queueLock) { writeQueue(emptyList()) } }
                 safely { synchronized(tapLock) { runCatching { config.storage.set(TAP_KEY, "") } } }
+                // B28: an install that opted out never sends a "came back" note again.
+                safely { synchronized(tapLock) { runCatching { config.storage.set(INSTALL_TAP_KEY, "") } } }
             } else {
                 if (isEnabled() && deferredDue.getAndSet(false)) safely { firstCheck() }
                 flush()
@@ -495,8 +506,34 @@ class StraitClient(private val config: StraitConfig) {
     // sent with conversion events. An attributed open without a known tap id
     // (short link, fingerprint match) forgets it: the newer touch wins.
     // Storage failures are ignored.
-    private fun noteTap(clickId: String?, at: Long) = synchronized(tapLock) {
-        if (isEnabled()) runCatching { config.storage.set(TAP_KEY, if (clickId != null) rememberTap(clickId, at) else "") }
+    // B28: [install] = this open is the install's own first open; its tap id is kept once as the install tap.
+    private fun noteTap(clickId: String?, at: Long, install: Boolean = false) = synchronized(tapLock) {
+        if (!isEnabled()) return@synchronized
+        runCatching { config.storage.set(TAP_KEY, if (clickId != null) rememberTap(clickId, at) else "") }
+        if (install && clickId != null) runCatching {
+            if (config.storage.get(INSTALL_TAP_KEY).isNullOrEmpty()) config.storage.set(INSTALL_TAP_KEY, installTapValue(clickId, at))
+        }
+    }
+
+    /**
+     * B28: the day 1 / 7 / 30 "came back" note. Marked sent before it goes (a failed write sends nothing),
+     * one check at a time; then reported like an open (queued and retried on no answer, 429 or 5xx).
+     */
+    private fun checkReturn() = synchronized(returnLock) {
+        if (!isEnabled()) return@synchronized
+        val now = config.clock()
+        val note = synchronized(tapLock) {
+            if (!isEnabled()) return@synchronized null
+            val stored = config.storage.get(INSTALL_TAP_KEY)
+            val note = returnNote(stored, now.toDouble()) ?: return@synchronized null
+            val tap = JSONObject(stored!!)
+            val sent = tap.optJSONArray("sent")?.let { a -> (0 until a.length()).mapNotNull { (a.opt(it) as? Number)?.toInt() } }.orEmpty()
+            config.storage.set(INSTALL_TAP_KEY, installTapValue(note.clickId, tap.get("at") as Number, sent + note.day))
+            note
+        } ?: return@synchronized
+        if (!isEnabled()) return@synchronized // switched off meanwhile
+        report(putVersions(JSONObject().put("type", "return").put("openId", note.openId).put("kind", "return")
+            .put("day", note.day).put("clickId", note.clickId).put("platform", config.platform).put("at", now)))
     }
 
     /** B18: delete an expired remembered tap instead of only ignoring it. Re-read
@@ -543,6 +580,9 @@ class StraitClient(private val config: StraitConfig) {
         val res = if (body.optString("type") == "event") {
             body.remove("type"); body.remove("at")
             call("POST", "/v1/event", body).first
+        } else if (body.optString("type") == "return") {
+            body.remove("type") // B28: no device class, nothing but the note
+            call("POST", "/v1/open", body).first
         } else {
             if (deviceClass != null) body.put("deviceClass", deviceClass) // B14: added at send time, never queued
             call("POST", "/v1/open", body).first
@@ -612,7 +652,7 @@ class StraitClient(private val config: StraitConfig) {
                 rawUrl = raw, ms = config.clock() - t0, at = t0))
         val on = isEnabled()
         if (!c.needsResolve) {
-            if (c.clickId != null && on) noteTap(c.clickId, t0)
+            if (c.clickId != null && on) noteTap(c.clickId, t0, firstLaunch)
             val e = emit(LinkEvent(id, "direct", c.route, appState, true, rawUrl = raw, url = c.url, path = c.path,
                 params = c.params, ms = config.clock() - t0, at = t0))
             // Navigation never waits for the report: it is sent after the event.
@@ -652,7 +692,7 @@ class StraitClient(private val config: StraitConfig) {
             val reason = if (matched) null else (str(json, "reason") ?: str(json, "error"))
             val linkId = str(json, "linkId")
             val dest = destination(if (matched) str(json, "longUrl") else null)
-            if (matched) noteTap(replyClickId(json.opt("clickId")), t0)
+            if (matched) noteTap(replyClickId(json.opt("clickId")), t0, firstLaunch)
             val e = emit(LinkEvent(id, "direct", LinkRoute.APP_LINK, appState, matched,
                 reason = reason, rawUrl = raw, url = dest.url, path = dest.path, params = dest.params,
                 linkId = linkId, ms = config.clock() - t0, at = t0))
@@ -704,7 +744,7 @@ class StraitClient(private val config: StraitConfig) {
                     clickId?.let { body.put("clickId", it) }
                     val json = answered("/v1/referrer", tag(body))
                     if (json.opt("matched") == true) {
-                        if (record) noteTap(replyClickId(json.opt("clickId"), clickId), t0)
+                        if (record) noteTap(replyClickId(json.opt("clickId"), clickId), t0, install = true)
                         val dest = destination(str(json, "longUrl"))
                         return emit(LinkEvent(id, "deferred", LinkRoute.INSTALL_REFERRER, AppStateAtLink.CLOSED, true,
                             url = dest.url, path = dest.path, params = dest.params,
@@ -717,7 +757,7 @@ class StraitClient(private val config: StraitConfig) {
             putDevice(body, config.device())
             val json = answered("/v1/match", tag(body))
             val matched = json.opt("matched") == true
-            if (record && matched) noteTap(replyClickId(json.opt("clickId")), t0)
+            if (record && matched) noteTap(replyClickId(json.opt("clickId")), t0, install = true)
             val dest = destination(if (matched) str(json, "longUrl") else null)
             emit(LinkEvent(id, "deferred", LinkRoute.FINGERPRINT, AppStateAtLink.CLOSED, matched,
                 reason = if (matched) null else "no_match", url = dest.url, path = dest.path, params = dest.params,
