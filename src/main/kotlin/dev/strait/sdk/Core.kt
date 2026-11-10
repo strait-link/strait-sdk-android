@@ -144,15 +144,21 @@ private fun isJsSpace(c: Char) = c in '\u0009'..'\u000d' || c == ' ' || c == '\u
     c == '\u2028' || c == '\u2029' || c == '\u202f' || c == '\u205f' || c == '\u3000' || c == '\ufeff'
 
 /**
+ * B27 v16 (shared-spec ADR 0011): lower case per code point, no context, no language, so every runtime agrees:
+ * `İ` → `i̇` (i + U+0307) and `Σ` → `σ` first (Java's final-sigma rule would give `ς` at the end of a word).
+ */
+private fun lowerEmail(s: String) = s.replace("\u0130", "i\u0307").replace('\u03A3', '\u03C3').lowercase()
+
+/**
  * B27 (shared-spec ADR 0009, ADR 0010): what `setUserId(id)` sends with later events, or null (nothing sent).
  * Trimmed (JavaScript's whitespace set); empty, longer than [USER_ID_MAX] UTF-16 units or holding a control character = null. An email (any `@`,
- * `＠` or `﹫`) is sent as the SHA-256 hex of its lower-case form, a phone number ([phoneNumberForm]) as the SHA-256 hex of its
+ * `＠` or `﹫`) is sent as the SHA-256 hex of [lowerEmail] of it, a phone number ([phoneNumberForm]) as the SHA-256 hex of its
  * canonical form: `userIdHashed = true`, the raw value never leaves the device.
  */
 internal fun userIdField(id: String?): UserIdField? {
     val t = id?.trim(::isJsSpace) ?: return null
     if (t.isEmpty() || t.length > USER_ID_MAX) return null
-    if (t.any { it == '@' || it == '\uFF20' || it == '\uFE6B' }) return UserIdField(sha256Hex(t.lowercase()), true)
+    if (t.any { it == '@' || it == '\uFF20' || it == '\uFE6B' }) return UserIdField(sha256Hex(lowerEmail(t)), true)
     phoneNumberForm(t)?.let { return UserIdField(sha256Hex(it), true) }
     if (t.any { it <= '\u001f' || it == '\u007f' }) return null
     return UserIdField(t, false)

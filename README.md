@@ -27,7 +27,7 @@ A tap opens the exact screen, and every link open and install is recorded in you
   <a href="#docs-and-support">Talk to the Strait team</a>
 </p>
 
-`strait-sdk-android` (Kotlin) · v0.10.6
+`strait-sdk-android` (Kotlin) · v0.10.7
 
 Deep linking for native Android, part of [Strait](https://straitlink.in). It covers direct links
 (verified App Links and custom-scheme hand-offs), deferred links (Play Install
@@ -101,7 +101,7 @@ dependencyResolutionManagement {
 }
 
 // app/build.gradle.kts
-dependencies { implementation("com.github.strait-link:strait-sdk-android:v0.10.6") }
+dependencies { implementation("com.github.strait-link:strait-sdk-android:v0.10.7") }
 ```
 <!-- /brand:install -->
 
@@ -349,7 +349,7 @@ clears it), and not sent with app opens or installs. An event saved while offlin
 tracked with on the device until it is sent (up to 7 days; deleted on opt-out).
 
 Emails and phone numbers never leave the phone: an id with `@` is sent as the SHA-256 hex of its
-lower-cased form, a phone number (8-15 digits with any spaces, dashes, dots, brackets
+lower-cased form (letter by letter: `İ` → `i̇`, `Σ` → `σ`; ADR 0011), a phone number (8-15 digits with any spaces, dashes, dots, brackets
 or slashes, an optional `+`, `00` or `tel:`; Indian, Arabic and full-width digits too) as the SHA-256 hex of `+` and
 its digits when written with `+` or `00`, else of its digits, with `userIdHashed: true` (shared-spec ADR 0010). To
 join, hash your own value the same way (`sha256("priya@example.com")`, `sha256("+919876543210")` for a number
