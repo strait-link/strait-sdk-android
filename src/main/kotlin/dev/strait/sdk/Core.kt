@@ -161,10 +161,10 @@ internal fun userIdField(id: String?): UserIdField? {
 /** The zero of each run of ten decimal digits B27 reads: ASCII, Arabic-Indic, Eastern Arabic-Indic, Devanagari, Bengali, Gurmukhi, Gujarati, Oriya, Tamil, Telugu, Kannada, Malayalam, full-width. */
 private val DIGIT_ZEROS = intArrayOf(0x30, 0x660, 0x6f0, 0x966, 0x9e6, 0xa66, 0xae6, 0xb66, 0xbe6, 0xc66, 0xce6, 0xd66, 0xff10)
 
-/** Characters a written phone number may hold between its digits (B27 v15): spaces, dashes, dots, brackets, slashes, invisible marks. */
+/** Characters a written phone number may hold between its digits (B27 v15): spaces, dashes (incl. Japanese ー), dots, brackets, slashes, invisible marks. */
 private fun isPhoneSeparator(c: Int) = c == 0x20 || c == 0x28 || c == 0x29 || c == 0x2d || c == 0x2e || c == 0x2f || c == 0xa0 ||
     c in 0x2000..0x2015 || c in 0x202a..0x202f || c == 0x205f || c == 0x2060 || c in 0x2066..0x2069 ||
-    c == 0x2212 || c == 0x3000 || c == 0xfeff || c == 0xff08 || c == 0xff09 || c in 0xff0d..0xff0f
+    c == 0xad || c == 0x61c || c == 0x30fc || c == 0xff70 || c == 0x2212 || c == 0x3000 || c == 0xfeff || c == 0xff08 || c == 0xff09 || c in 0xff0d..0xff0f
 
 /**
  * B27 v15 (shared-spec ADR 0010): the canonical form of a phone number, or null when [t] is not one. After an optional
