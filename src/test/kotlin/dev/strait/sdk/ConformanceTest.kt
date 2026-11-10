@@ -33,7 +33,20 @@ class ConformanceTest {
         assertEquals(c.getLong("ATTRIBUTION_WINDOW_MS"), ATTRIBUTION_WINDOW_MS)
         assertEquals(c.getInt("INSTALL_REFERRER_MAX"), INSTALL_REFERRER_MAX)
         assertEquals(c.getInt("USER_ID_MAX"), USER_ID_MAX)
-        assertEquals(7, c.length(), "unexpected constants: $c")
+        val days = c.getJSONArray("RETURN_DAYS")
+        assertEquals((0 until days.length()).map { days.getInt(it) }, RETURN_DAYS)
+        assertEquals(c.getLong("DAY_MS"), DAY_MS)
+        assertEquals(9, c.length(), "unexpected constants: $c")
+        assertEquals(17, v.getInt("version"), "vectors v17")
+    }
+
+    @Test
+    fun returnNoteVectors() {
+        for (c in objects("returnNote")) {
+            val stored = if (c.isNull("stored")) null else c.getString("stored")
+            val want = if (c.isNull("expected")) null else c.getJSONObject("expected").let { ReturnNote(it.getInt("day"), it.getString("clickId"), it.getString("openId")) }
+            assertEquals(want, returnNote(stored, c.getDouble("now")), c.getString("name"))
+        }
     }
 
     @Test

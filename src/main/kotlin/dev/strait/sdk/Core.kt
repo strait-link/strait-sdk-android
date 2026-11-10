@@ -360,6 +360,36 @@ internal fun eventClickId(stored: String?, now: Long, explicit: String? = null):
     return if (age >= 0 && age <= ATTRIBUTION_WINDOW_MS) clickId.lowercase() else null
 }
 
+/** B28: the days after the install that send a "came back" note, and a day in ms. */
+internal val RETURN_DAYS = listOf(1, 7, 30)
+internal const val DAY_MS: Long = 24L * 60 * 60 * 1000
+
+/** Storage value for the install's tap (key `strait.installTap`, B28): `{"clickId":...,"at":<epoch ms>,"sent":[...]}`. */
+internal fun installTapValue(clickId: String, at: Number, sent: List<Int> = emptyList()): String =
+    org.json.JSONObject().put("clickId", clickId.lowercase()).put("at", at).put("sent", org.json.JSONArray(sent)).toString()
+
+/** A "came back" note due now (B28): `openId` = `r<day>-<clickId>`. */
+internal data class ReturnNote(val day: Int, val clickId: String, val openId: String)
+
+/**
+ * The "came back" note due at [now] (contract B28), or null: the install tap ([stored], see
+ * [installTapValue]) is readable, whole days since the install open is 1, 7 or 30, and that day
+ * was not sent yet. At most three per install, ever.
+ */
+internal fun returnNote(stored: String?, now: Double): ReturnNote? {
+    if (stored.isNullOrEmpty()) return null
+    val tap = try { org.json.JSONObject(stored) } catch (_: Exception) { return null }
+    val clickId = tap.opt("clickId") as? String ?: return null
+    if (!CLICK_ID.matches(clickId)) return null
+    val at = (tap.opt("at") as? Number)?.toDouble()?.takeIf { it.isFinite() && it > 0 && now >= it } ?: return null
+    val day = kotlin.math.floor((now - at) / DAY_MS).toInt()
+    if (day !in RETURN_DAYS) return null
+    val sent = tap.opt("sent") as? org.json.JSONArray
+    if (sent != null && (0 until sent.length()).any { (sent.opt(it) as? Number)?.toDouble() == day.toDouble() }) return null
+    val id = clickId.lowercase()
+    return ReturnNote(day, id, "r$day-$id")
+}
+
 /**
  * True when the remembered tap ([stored], see [rememberTap]) is set but can no
  * longer be used: unreadable, malformed, or opened more than

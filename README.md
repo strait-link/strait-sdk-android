@@ -132,10 +132,11 @@ dependencies { implementation("com.github.strait-link:strait-sdk-android:v0.10.7
 | B18 open reports and the retry queue carry no query or fragment (`reportUrl`: host + path, plus the first `utm_source`); an expired `strait.lastTap` is deleted (`staleTap`) | ✓ | `StraitClient`, `Core.kt`, vectors v6 |
 | B22 old Firebase `*.page.link` links: short link → `/v1/resolve` (engine matches the old host + code); long link `/?link=<url>` → the `link` value is the destination, read on the device, no lookup | ✓ | `Core.kt` (`pageLinkLongLink`, `classifyUrl`), vectors v8 |
 | B27 `setUserId(id)`: in memory only, `userId` + `userIdHashed` on later `/v1/event` bodies (kept by a queued event), never on any other call; emails / phone numbers sent as SHA-256 hex; nothing while off | ✓ | `StraitClient.setUserId`, `userIdField`, vectors v14 |
+| B28 "came back" notes: the install's first open keeps its tap id once (`strait.installTap`, cleared at a first launch and by `setEnabled(false)`); on day 1, 7 and 30 the first start / foreground sends `/v1/open {kind:"return", day, clickId, openId:"r<day>-<tap id>"}` (marked sent first, queued like an open); nothing while off | ✓ | `StraitClient.checkReturn`, `returnNote`, vectors v17 |
 | B23 `doctor()` setup check: key, endpoint, the link host's `assetlinks.json` lists the package and this build's signing certificate (`doctorFindings`, ids and wording from shared-spec ADR 0002); one GET, never throws, prints each finding | ✓ | `Doctor.kt`, `StraitClient.doctor` |
 
 Vectors: `src/test/resources/test-vectors.json` (signature) and
-`conformance-vectors.json` v14 (pure helpers). Both are byte-identical copies from
+`conformance-vectors.json` v17 (pure helpers). Both are byte-identical copies from
 `shared-spec`, so don't edit them here. `doctor-vectors.json` (B23, 43 cases) is the same file in the
 Flutter SDK, generated from the React Native SDK's `doctorFindings`.
 
@@ -262,6 +263,14 @@ sends `sdkVersion` (this SDK's version) and, when you pass `appVersion`, your ap
 `/v1/lookup` send neither; while `setEnabled(false)` nothing is sent.
 
 On Android's first launch the SDK also sends the Play install referrer string as read (`installReferrer`, contract B26) with the call that records the install, so the install keeps its campaign. Strait keeps only `utm_source`, `utm_medium`, `utm_campaign`, `utm_term` and `utm_content`; `gclid` and any other parameter in it are dropped on arrival, never stored or logged. Not sent on the debug re-check, on iPhone, or while switched off.
+
+**"Came back" notes (contract B28).** So the dashboard can show whether the people a campaign brought came back
+(D1 / D7 / D30), the SDK sends at most three tiny notes per install, ever: the first time the app starts or comes to
+the front on day 1, day 7 and day 30 after the install. Each note carries only the install's tap id (Strait's own
+random id for the tap that brought the install, which the SDK already keeps), the day number, the platform and the
+app / SDK version. No device id, no user id, no URL. Installs that no Strait link brought send nothing. Nothing is
+sent while switched off, and `setEnabled(false)` deletes the stored install tap, so that install never sends a note again.
+For Google Play's Data safety form: app interactions, not linked to the user, not shared.
 
 
 | How the app opened | Reported via | Joined to |
@@ -458,7 +467,7 @@ real phone.
 
 ## User consent / opt-out
 
-If your app asks for consent first (for example under India's DPDP Act or a GDPR consent flow in the EU), call `strait.setEnabled(false)` until the person agrees: Strait then sends no open reports or events, does no install matching, and deletes reports waiting on the device. The choice is kept across launches in your `storage`; `setEnabled(true)` turns it back on (default: on) and `isEnabled()` reads it.
+If your app asks for consent first (for example under India's DPDP Act or a GDPR consent flow in the EU), call `strait.setEnabled(false)` until the person agrees: Strait then sends no open reports or events, does no install matching, and deletes reports waiting on the device (and the install tap behind the day 1 / 7 / 30 "came back" notes, which then never resume). The choice is kept across launches in your `storage`; `setEnabled(true)` turns it back on (default: on) and `isEnabled()` reads it.
 Links that carry their own destination still open your screens. A Strait short link is looked up through the engine's `/v1/lookup`, which records nothing (no tap, no open, no tap id), so it still opens the right screen; only if that lookup fails (offline) does it come back `matched = false, reason = "disabled"`. Whether you need consent, and for what, is a question for your own legal advice.
 
 ## Lower-level helpers (signature only; the rest internal since 0.8.0)
